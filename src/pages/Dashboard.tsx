@@ -1,95 +1,183 @@
-import React, { useState, useEffect } from 'react'
-import { 
-  TrendingUp, 
-  Phone, 
-  Clock, 
-  Target,
-  Users,
-  Award
-} from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
-import { mockDataService } from '../lib/mockData'
-import { MetricCard } from '../components/Dashboard/MetricCard'
-import { CallsTable } from '../components/Dashboard/CallsTable'
+// src/pages/Dashboard.tsx
+
+import React, { useState, useEffect } from 'react';
+import { TrendingUp, Phone, Clock, Target, Users, Award } from 'lucide-react';
+import { useAuth, AppUser } from '../hooks/useAuth';
+import { baserowService, BaserowCallRecording, BaserowCallAnalysis, BaserowUser } from '../lib/baserowService';
+import { MetricCard } from '../components/Dashboard/MetricCard';
+import { CallsTable } from '../components/Dashboard/CallsTable';
+
+// Interface para os dados da tabela, combinando informações de gravação e análise
+interface FormattedCall {
+  call_id: string; // Usaremos o ID da gravação como string
+  prospect_name: string;
+  call_date: string;
+  efficiency_score: number;
+  status: string;
+  sdr_name?: string;
+  call_duration_seconds: number;
+}
+
+// Interface para as métricas exibidas nos cards
+interface DashboardMetrics {
+  avgScore: number;
+  avgTalkRatio: string;
+  totalCalls: number;
+  analyzedCalls: number;
+  teamSize: number;
+  topPerformer: string;
+}
 
 export function Dashboard() {
-  const { user } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [metrics, setMetrics] = useState({
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
     avgScore: 0,
-    avgTalkRatio: '0/100',
+    avgTalkRatio: '0/0',
     totalCalls: 0,
     analyzedCalls: 0,
     teamSize: 0,
-    topPerformer: ''
-  })
-  const [recentCalls, setRecentCalls] = useState([])
+    topPerformer: '',
+  });
+  const [recentCalls, setRecentCalls] = useState<FormattedCall[]>([]);
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [user])
+    // A função de busca de dados agora é chamada aqui dentro
+    const fetchDashboardData = async (currentUser: AppUser) => {
+      setLoading(true);
+      try {
+        const allRecordings = await baserowService.getCallRecordings();
+        const allAnalyses = await baserowService.getCallAnalyses();
+        const allSDRs = await baserowService.getAllSDRs();
 
-  const fetchDashboardData = async () => {
-    if (!user) return
+        // Mapeia analyses por recording_id para acesso rápido
+        const analysesMap = new Map<number, BaserowCallAnalysis>();
+        allAnalyses.forEach(analysis => {
+          if (analysis.call_recording && analysis.call_recording.length > 0) {
+            const recordingId = analysis.call_recording[0].id;
+            analysesMap.set(recordingId, analysis);
+          }
+        });
 
-    try {
-      if (user.role === 'manager') {
-        const teamMetrics = await mockDataService.getTeamMetrics()
-        setMetrics(teamMetrics)
+        let recordingsToProcess: BaserowCallRecording[] = [];
+        let analysesToProcess: BaserowCallAnalysis[] = [];
+        let newMetrics: Partial<DashboardMetrics> = {};
+
+        if (currentUser.role === 'manager') {
+          recordingsToProcess = allRecordings;
+          analysesToProcess = allAnalyses;
+          
+          // Calcular Top Performer
+          const sdrScores: { [sdrId: number]: { totalScore: number; count: number; name: string } } = {};
+          allSDRs.forEach(sdr => {
+            sdrScores[sdr.id] = { totalScore: 0, count: 0, name: sdr.name };
+          });
+
+          allRecordings.forEach(rec => {
+            const analysis = analysesMap.get(rec.id);
+            if (analysis && rec.sdr && rec.sdr.length > 0) {
+              const sdrId = rec.sdr[0].id;
+              if (sdrScores[sdrId]) {
+                sdrScores[sdrId].totalScore += analysis.efficiency_score;
+                sdrScores[sdrId].count += 1;
+              }
+            }
+          });
+          
+          let topPerformerName = 'N/A';
+          let maxAvgScore = -1;
+
+          Object.values(sdrScores).forEach(sdrData => {
+            if (sdrData.count > 0) {
+              const avg = sdrData.totalScore / sdrData.count;
+              if (avg > maxAvgScore) {
+                maxAvgScore = avg;
+                topPerformerName = sdrData.name;
+              }
+            }
+          });
+
+          newMetrics = {
+            teamSize: allSDRs.length,
+            topPerformer: topPerformerName,
+          };
+
+        } else { // Papel é 'sdr'
+          recordingsToProcess = allRecordings.filter(rec =>
+            rec.sdr && rec.sdr.some(s => s.id === currentUser.id)
+          );
+          const sdrRecordingIds = new Set(recordingsToProcess.map(rec => rec.id));
+          analysesToProcess = allAnalyses.filter(analysis =>
+            analysis.call_recording && analysis.call_recording.some(rec => sdrRecordingIds.has(rec.id))
+          );
+        }
         
-        const allCalls = await mockDataService.getCallRecordings()
-        const formattedCalls = allCalls.slice(0, 10).map(call => ({
-          call_id: call.call_id,
-          prospect_name: call.prospect_name,
-          call_date: call.call_date,
-          efficiency_score: getCallScore(call.call_id),
-          status: call.status,
-          sdr_name: call.sdr_name,
-          call_duration_seconds: call.call_duration_seconds
-        }))
-        setRecentCalls(formattedCalls)
-      } else {
-        const sdrMetrics = await mockDataService.getSDRMetrics(user.id)
+        // Calcular métricas comuns
+        const totalCalls = recordingsToProcess.length;
+        const analyzedCalls = analysesToProcess.length;
+        const avgScore = analyzedCalls > 0
+          ? Math.round(analysesToProcess.reduce((sum, a) => sum + a.efficiency_score, 0) / analyzedCalls)
+          : 0;
+        
+        // Formatar chamadas recentes para a tabela
+        const sdrNamesMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.name]));
+        
+        const formattedCalls = recordingsToProcess
+          .sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime()) // Ordenar por mais recente
+          .slice(0, 10) // Pegar as 10 últimas
+          .map(rec => {
+            const analysis = analysesMap.get(rec.id);
+            const sdrInfo = rec.sdr && rec.sdr.length > 0 ? { id: rec.sdr[0].id, name: sdrNamesMap.get(rec.sdr[0].id) || 'N/A' } : null;
+            
+            return {
+              call_id: rec.id.toString(),
+              prospect_name: rec.prospect_name,
+              call_date: rec.call_date,
+              efficiency_score: analysis ? analysis.efficiency_score : 0,
+              status: rec.status[0]?.value || 'N/A',
+              sdr_name: sdrInfo?.name,
+              call_duration_seconds: rec.call_duration_seconds,
+            };
+          });
+
         setMetrics({
-          ...sdrMetrics,
-          teamSize: 0,
-          topPerformer: ''
-        })
-        
-        const sdrCalls = await mockDataService.getCallRecordings(user.id)
-        const formattedCalls = sdrCalls.slice(0, 10).map(call => ({
-          call_id: call.call_id,
-          prospect_name: call.prospect_name,
-          call_date: call.call_date,
-          efficiency_score: getCallScore(call.call_id),
-          status: call.status,
-          call_duration_seconds: call.call_duration_seconds
-        }))
-        setRecentCalls(formattedCalls)
-      }
-    } catch (error) {
-      console.error('Erro ao buscar dados do dashboard:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+          avgScore,
+          avgTalkRatio: 'N/A', // Placeholder, precisa ser calculado
+          totalCalls,
+          analyzedCalls,
+          teamSize: newMetrics.teamSize || 0,
+          topPerformer: newMetrics.topPerformer || '',
+        });
 
-  const getCallScore = (callId: string) => {
-    return mockDataService.getCallScoreSync(callId)
-  }
+        setRecentCalls(formattedCalls);
+
+      } catch (error) {
+        console.error('Erro ao buscar dados do dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      fetchDashboardData(user);
+    }
+  }, [user]);
+
 
   if (loading) {
     return (
       <div className="p-6">
         <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
             ))}
           </div>
+           <div className="h-64 bg-gray-200 rounded-xl"></div>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -112,8 +200,6 @@ export function Dashboard() {
         <MetricCard
           title="Pontuação Média"
           value={metrics.avgScore}
-          change={metrics.avgScore >= 75 ? '+5%' : '-2%'}
-          changeType={metrics.avgScore >= 75 ? 'positive' : 'negative'}
           icon={TrendingUp}
           iconColor="text-blue-600"
         />
@@ -128,8 +214,6 @@ export function Dashboard() {
         <MetricCard
           title="Total de Chamadas"
           value={metrics.totalCalls}
-          change="+12%"
-          changeType="positive"
           icon={Phone}
           iconColor="text-purple-600"
         />
@@ -167,5 +251,5 @@ export function Dashboard() {
       {/* Recent Calls Table */}
       <CallsTable calls={recentCalls} showSDRColumn={user?.role === 'manager'} />
     </div>
-  )
+  );
 }
