@@ -1,30 +1,39 @@
-import React, { useState } from 'react'
-import { LogIn, Loader2 } from 'lucide-react'
-import { useAuth } from '../../hooks/useAuth'
+// src/components/Auth/LoginForm.tsx
+
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { LogIn, Loader2 } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
 
 export function LoginForm() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const { signIn } = useAuth()
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const { signIn } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
     try {
-      const { error } = await signIn(email, password)
+      const { error } = await signIn(email, password);
       if (error) {
-        setError(error.message)
+        setError(error.message);
+        setLoading(false); // Para o loading em caso de erro
+      } else {
+        // --- CORREÇÃO APLICADA AQUI ---
+        // Força o recarregamento da página após o sucesso do login.
+        // O App.tsx irá detectar o usuário logado e redirecionar para o /dashboard.
+        window.location.reload();
       }
     } catch (err) {
-      setError('Ocorreu um erro inesperado')
-    } finally {
-      setLoading(false)
+      setError('Ocorreu um erro inesperado');
+      setLoading(false);
     }
-  }
+    // Não precisamos mais do `finally` aqui, pois o loading é controlado nos branches de erro/sucesso.
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -91,15 +100,23 @@ export function LoginForm() {
                 'Entrar'
               )}
             </button>
+            
+            <p className="text-center text-sm text-gray-600">
+              Não tem uma conta?{' '}
+              <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">
+                Cadastre-se
+              </Link>
+            </p>
+
           </form>
 
           <div className="mt-6 text-xs text-gray-500 space-y-1">
-            <p><strong>Contas de Demonstração:</strong></p>
-            <p>SDR: joao.silva@empresa.com / senha123</p>
-            <p>Gerente: maria.santos@empresa.com / senha123</p>
+             <p><strong>Para testar:</strong></p>
+             <p>1. Crie uma conta de Administrador na tela de cadastro.</p>
+             <p>2. Faça login com a conta criada.</p>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { baserowService, BaserowCallRecording, BaserowCallAnalysis } from '../lib/baserowService';
+// CORREÇÃO APLICADA AQUI: O caminho do import foi ajustado de '../../' para '../'
+import { baserowService, BaserowCallAnalysis } from '../lib/baserowService';
 import { CallsTable } from '../components/Dashboard/CallsTable';
 import { UploadModal } from '../components/Calls/UploadModal';
-import { Calendar, Filter, Search, Upload } from 'lucide-react';
+import { RecordingModal } from '../components/Calls/RecordingModal';
+import { Calendar, Filter, Search, Upload, Mic } from 'lucide-react';
 
-// Interface para os dados combinados que a tabela e os filtros usarão
 interface CombinedCallData {
-  call_id: string; // ID da gravação
+  call_id: string;
   sdr_id: number | null;
   prospect_name: string;
   call_date: string;
@@ -29,13 +30,17 @@ const Calls: React.FC = () => {
   const [allCalls, setAllCalls] = useState<CombinedCallData[]>([]);
   const [loading, setLoading] = useState(true);
   const [sdrs, setSDRs] = useState<{ id: number; name: string }[]>([]);
+  
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isRecordingModalOpen, setIsRecordingModalOpen] = useState(false);
 
-  // Envolvemos a função de busca em useCallback para estabilizar a referência
   const fetchCallsData = useCallback(async () => {
     if (!user) return;
 
-    setLoading(true);
+    if (allCalls.length === 0) {
+        setLoading(true);
+    }
+
     try {
       const recordings = await baserowService.getCallRecordings();
       const analyses = await baserowService.getCallAnalyses();
@@ -52,7 +57,7 @@ const Calls: React.FC = () => {
       const sdrNamesMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.name]));
 
       let combinedData: CombinedCallData[] = recordings
-        .sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime()) // Ordenar por mais recente
+        .sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime())
         .map(rec => {
           const analysis = analysesMap.get(rec.id);
           const sdrId = rec.sdr && rec.sdr.length > 0 ? rec.sdr[0].id : null;
@@ -80,13 +85,12 @@ const Calls: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]); // A dependência é apenas o usuário
+  }, [user, allCalls.length]);
 
   useEffect(() => {
     fetchCallsData();
   }, [fetchCallsData]);
 
-  // Aplicar filtros nos dados já carregados
   const filteredCalls = allCalls.filter(call => {
     const matchesSearch = call.prospect_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesSDR = !selectedSDR || call.sdr_id === parseInt(selectedSDR, 10);
@@ -120,18 +124,32 @@ const Calls: React.FC = () => {
       <UploadModal 
         isOpen={isUploadModalOpen} 
         onClose={() => setIsUploadModalOpen(false)}
-        onUploadComplete={fetchCallsData} // Recarrega os dados após o upload
+        onUploadComplete={fetchCallsData}
+      />
+      <RecordingModal
+        isOpen={isRecordingModalOpen}
+        onClose={() => setIsRecordingModalOpen(false)}
+        onUploadComplete={fetchCallsData}
       />
       <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center flex-wrap gap-4">
           <h1 className="text-3xl font-bold text-gray-900">Chamadas</h1>
-          <button 
-            onClick={() => setIsUploadModalOpen(true)}
-            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Enviar Gravação</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button 
+                onClick={() => setIsRecordingModalOpen(true)}
+                className="flex items-center space-x-2 bg-white text-gray-700 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+                <Mic className="w-4 h-4" />
+                <span>Gravar Chamada</span>
+            </button>
+            <button 
+                onClick={() => setIsUploadModalOpen(true)}
+                className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+                <Upload className="w-4 h-4" />
+                <span>Enviar Gravação</span>
+            </button>
+          </div>
         </div>
 
         {/* Filtros */}
@@ -179,4 +197,28 @@ const Calls: React.FC = () => {
             </div>
 
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w
+              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <select
+                value={dateRange}
+                onChange={(e) => setDateRange(e.target.value)}
+                className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent appearance-none bg-white"
+              >
+                <option value="">Todas as Datas</option>
+                <option value="today">Hoje</option>
+                <option value="week">Esta Semana</option>
+                <option value="month">Este Mês</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabela de Chamadas */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <CallsTable calls={filteredCalls} showSDRColumn={user?.role === 'manager'} />
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default Calls;

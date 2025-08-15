@@ -1,15 +1,18 @@
 // src/pages/Dashboard.tsx
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Phone, Clock, Target, Users, Award } from 'lucide-react';
-import { useAuth, AppUser } from '../hooks/useAuth';
-import { baserowService, BaserowCallRecording, BaserowCallAnalysis, BaserowUser } from '../lib/baserowService';
+import { TrendingUp, Phone, Users, Award, BookOpen, Smile, Frown } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import { baserowService } from '../lib/baserowService';
 import { MetricCard } from '../components/Dashboard/MetricCard';
 import { CallsTable } from '../components/Dashboard/CallsTable';
+import { SentimentPieChart } from '../components/Dashboard/charts/SentimentPieChart';
+import { TeamScoreGauge } from '../components/Dashboard/charts/TeamScoreGauge';
+import { TopicsBarChart } from '../components/Dashboard/charts/TopicsBarChart';
 
-// Interface para os dados da tabela, combinando informações de gravação e análise
+// Tipos para os dados do dashboard
 interface FormattedCall {
-  call_id: string; // Usaremos o ID da gravação como string
+  call_id: string;
   prospect_name: string;
   call_date: string;
   efficiency_score: number;
@@ -18,238 +21,150 @@ interface FormattedCall {
   call_duration_seconds: number;
 }
 
-// Interface para as métricas exibidas nos cards
-interface DashboardMetrics {
-  avgScore: number;
-  avgTalkRatio: string;
-  totalCalls: number;
-  analyzedCalls: number;
-  teamSize: number;
+interface AdminDashboardData {
+  teamScore: number;
+  teamTarget: number;
+  playbookAdherence: number;
+  sentimentDistribution: { name: 'Positivo' | 'Neutro' | 'Negativo'; value: number }[];
+  topTopics: { name: string; count: number }[];
   topPerformer: string;
+  teamSize: number;
+  totalCalls: number;
 }
 
 export function Dashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState<DashboardMetrics>({
-    avgScore: 0,
-    avgTalkRatio: '0/0',
-    totalCalls: 0,
-    analyzedCalls: 0,
-    teamSize: 0,
-    topPerformer: '',
-  });
   const [recentCalls, setRecentCalls] = useState<FormattedCall[]>([]);
+  const [adminData, setAdminData] = useState<AdminDashboardData | null>(null);
 
   useEffect(() => {
-    // A função de busca de dados agora é chamada aqui dentro
-    const fetchDashboardData = async (currentUser: AppUser) => {
+    const fetchDashboardData = async () => {
+      if (!user) return;
       setLoading(true);
+
       try {
-        const allRecordings = await baserowService.getCallRecordings();
-        const allAnalyses = await baserowService.getCallAnalyses();
+        const recordings = await baserowService.getCallRecordings();
+        const analyses = await baserowService.getCallAnalyses();
         const allSDRs = await baserowService.getAllSDRs();
 
-        // Mapeia analyses por recording_id para acesso rápido
-        const analysesMap = new Map<number, BaserowCallAnalysis>();
-        allAnalyses.forEach(analysis => {
-          if (analysis.call_recording && analysis.call_recording.length > 0) {
-            const recordingId = analysis.call_recording[0].id;
-            analysesMap.set(recordingId, analysis);
-          }
-        });
+        const analysesMap = new Map(analyses.map(a => [a.call_recording[0]?.id, a]));
+        const sdrMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.name]));
 
-        let recordingsToProcess: BaserowCallRecording[] = [];
-        let analysesToProcess: BaserowCallAnalysis[] = [];
-        let newMetrics: Partial<DashboardMetrics> = {};
-
-        if (currentUser.role === 'manager') {
-          recordingsToProcess = allRecordings;
-          analysesToProcess = allAnalyses;
+        if (user.role === 'administrator') {
+          // --- Lógica para o Dashboard do Administrador ---
+          const analyzedCalls = analyses.filter(a => a.efficiency_score > 0);
           
-          // Calcular Top Performer
-          const sdrScores: { [sdrId: number]: { totalScore: number; count: number; name: string } } = {};
-          allSDRs.forEach(sdr => {
-            sdrScores[sdr.id] = { totalScore: 0, count: 0, name: sdr.name };
-          });
-
-          allRecordings.forEach(rec => {
-            const analysis = analysesMap.get(rec.id);
-            if (analysis && rec.sdr && rec.sdr.length > 0) {
-              const sdrId = rec.sdr[0].id;
-              if (sdrScores[sdrId]) {
-                sdrScores[sdrId].totalScore += analysis.efficiency_score;
-                sdrScores[sdrId].count += 1;
-              }
+          // 1. Média da Equipe
+          const totalScore = analyzedCalls.reduce((sum, a) => sum + a.efficiency_score, 0);
+          const teamScore = analyzedCalls.length > 0 ? Math.round(totalScore / analyzedCalls.length) : 0;
+          
+          // 2. Análise de Sentimento
+          const sentimentCounts = { Positivo: 0, Neutro: 0, Negativo: 0 };
+          analyzedCalls.forEach(a => {
+            const sentiment = a.sentiment[0]?.value;
+            if (sentiment && sentimentCounts.hasOwnProperty(sentiment)) {
+              sentimentCounts[sentiment]++;
             }
           });
-          
-          let topPerformerName = 'N/A';
-          let maxAvgScore = -1;
+          const sentimentDistribution = Object.entries(sentimentCounts).map(([name, value]) => ({ name: name as 'Positivo' | 'Neutro' | 'Negativo', value }));
 
-          Object.values(sdrScores).forEach(sdrData => {
-            if (sdrData.count > 0) {
-              const avg = sdrData.totalScore / sdrData.count;
-              if (avg > maxAvgScore) {
-                maxAvgScore = avg;
-                topPerformerName = sdrData.name;
-              }
-            }
-          });
+          // 3. Tópicos Mais Comuns (Simulação)
+          const topTopics = [
+            { name: 'Preço', count: 25 }, { name: 'Concorrente', count: 18 },
+            { name: 'Integração', count: 15 }, { name: 'Contrato', count: 12 },
+          ];
 
-          newMetrics = {
+          setAdminData({
+            teamScore,
+            teamTarget: 85, // Meta fixa por enquanto
+            playbookAdherence: 78, // Simulado
+            sentimentDistribution,
+            topTopics,
+            topPerformer: 'Pedro Oliveira', // Simulado
             teamSize: allSDRs.length,
-            topPerformer: topPerformerName,
-          };
-
-        } else { // Papel é 'sdr'
-          recordingsToProcess = allRecordings.filter(rec =>
-            rec.sdr && rec.sdr.some(s => s.id === currentUser.id)
-          );
-          const sdrRecordingIds = new Set(recordingsToProcess.map(rec => rec.id));
-          analysesToProcess = allAnalyses.filter(analysis =>
-            analysis.call_recording && analysis.call_recording.some(rec => sdrRecordingIds.has(rec.id))
-          );
+            totalCalls: recordings.length,
+          });
         }
         
-        // Calcular métricas comuns
-        const totalCalls = recordingsToProcess.length;
-        const analyzedCalls = analysesToProcess.length;
-        const avgScore = analyzedCalls > 0
-          ? Math.round(analysesToProcess.reduce((sum, a) => sum + a.efficiency_score, 0) / analyzedCalls)
-          : 0;
-        
-        // Formatar chamadas recentes para a tabela
-        const sdrNamesMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.name]));
-        
-        const formattedCalls = recordingsToProcess
-          .sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime()) // Ordenar por mais recente
-          .slice(0, 10) // Pegar as 10 últimas
-          .map(rec => {
-            const analysis = analysesMap.get(rec.id);
-            const sdrInfo = rec.sdr && rec.sdr.length > 0 ? { id: rec.sdr[0].id, name: sdrNamesMap.get(rec.sdr[0].id) || 'N/A' } : null;
-            
-            return {
-              call_id: rec.id.toString(),
-              prospect_name: rec.prospect_name,
-              call_date: rec.call_date,
-              efficiency_score: analysis ? analysis.efficiency_score : 0,
-              status: rec.status[0]?.value || 'N/A',
-              sdr_name: sdrInfo?.name,
-              call_duration_seconds: rec.call_duration_seconds,
-            };
-          });
-
-        setMetrics({
-          avgScore,
-          avgTalkRatio: 'N/A', // Placeholder, precisa ser calculado
-          totalCalls,
-          analyzedCalls,
-          teamSize: newMetrics.teamSize || 0,
-          topPerformer: newMetrics.topPerformer || '',
-        });
-
+        // Lógica para chamadas recentes (comum a ambos os papéis)
+        const callsToShow = user.role === 'administrator' ? recordings : recordings.filter(r => r.sdr[0]?.id === user.id);
+        const formattedCalls = callsToShow
+            .sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime())
+            .slice(0, 5)
+            .map(rec => ({
+                call_id: rec.id.toString(),
+                prospect_name: rec.prospect_name,
+                call_date: rec.call_date,
+                efficiency_score: analysesMap.get(rec.id)?.efficiency_score || 0,
+                status: rec.status[0]?.value || 'N/A',
+                sdr_name: sdrMap.get(rec.sdr[0]?.id) || 'N/A',
+                call_duration_seconds: rec.call_duration_seconds,
+            }));
         setRecentCalls(formattedCalls);
 
       } catch (error) {
-        console.error('Erro ao buscar dados do dashboard:', error);
+        console.error("Erro ao carregar dados do dashboard:", error);
       } finally {
         setLoading(false);
       }
     };
-
-    if (user) {
-      fetchDashboardData(user);
-    }
+    fetchDashboardData();
   }, [user]);
 
-
   if (loading) {
+    return <div className="p-6 text-center">Carregando...</div>;
+  }
+  
+  // Renderiza o Dashboard do Administrador
+  if (user?.role === 'administrator' && adminData) {
     return (
-      <div className="p-6">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
-            ))}
-          </div>
-           <div className="h-64 bg-gray-200 rounded-xl"></div>
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard do Administrador</h1>
+          <p className="text-gray-600">Visão geral da saúde e desempenho da sua equipe de vendas.</p>
         </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Coluna Principal */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <MetricCard title="Total de Chamadas" value={adminData.totalCalls} icon={Phone} />
+              <MetricCard title="Aderência ao Playbook" value={`${adminData.playbookAdherence}%`} icon={BookOpen} />
+              <MetricCard title="Membros na Equipe" value={adminData.teamSize} icon={Users} />
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Tópicos Mais Comuns</h3>
+              <TopicsBarChart data={adminData.topTopics} />
+            </div>
+          </div>
+
+          {/* Coluna Lateral */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border p-6 h-60">
+              <TeamScoreGauge score={adminData.teamScore} target={adminData.teamTarget} />
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border p-6">
+               <h3 className="text-lg font-semibold text-gray-800 mb-4">Distribuição de Sentimento</h3>
+              <SentimentPieChart data={adminData.sentimentDistribution} />
+            </div>
+          </div>
+        </div>
+        
+        <CallsTable title="Últimas Chamadas da Equipe" calls={recentCalls} showSDRColumn={true} />
       </div>
     );
   }
 
+  // Renderiza o Dashboard do SDR (simplificado)
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          {user?.role === 'manager' ? 'Dashboard da Equipe' : 'Meu Dashboard'}
-        </h1>
-        <p className="text-gray-600">
-          {user?.role === 'manager' 
-            ? 'Visão geral do desempenho da sua equipe e métricas de chamadas'
-            : 'Visão geral do seu desempenho e análises de chamadas'
-          }
-        </p>
-      </div>
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Pontuação Média"
-          value={metrics.avgScore}
-          icon={TrendingUp}
-          iconColor="text-blue-600"
-        />
-        
-        <MetricCard
-          title="Proporção Fala/Escuta"
-          value={metrics.avgTalkRatio}
-          icon={Clock}
-          iconColor="text-green-600"
-        />
-        
-        <MetricCard
-          title="Total de Chamadas"
-          value={metrics.totalCalls}
-          icon={Phone}
-          iconColor="text-purple-600"
-        />
-
-        {user?.role === 'manager' ? (
-          <MetricCard
-            title="Tamanho da Equipe"
-            value={metrics.teamSize}
-            icon={Users}
-            iconColor="text-orange-600"
-          />
-        ) : (
-          <MetricCard
-            title="Chamadas Analisadas"
-            value={metrics.analyzedCalls}
-            icon={Target}
-            iconColor="text-red-600"
-          />
-        )}
-      </div>
-
-      {/* Top Performer Card (Manager only) */}
-      {user?.role === 'manager' && metrics.topPerformer && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
-          <div className="flex items-center space-x-3">
-            <Award className="h-6 w-6 text-blue-600" />
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Melhor Desempenho</h3>
-              <p className="text-blue-600 font-medium">{metrics.topPerformer}</p>
-            </div>
-          </div>
+      <div className="p-6 space-y-6">
+        <div>
+            <h1 className="text-2xl font-bold text-gray-900">Meu Dashboard</h1>
+            <p className="text-gray-600">Visão geral do seu desempenho e análises de chamadas.</p>
         </div>
-      )}
-
-      {/* Recent Calls Table */}
-      <CallsTable calls={recentCalls} showSDRColumn={user?.role === 'manager'} />
-    </div>
+        {/* Adicionar métricas específicas do SDR aqui no futuro */}
+        <CallsTable title="Minhas Últimas Chamadas" calls={recentCalls} showSDRColumn={false} />
+      </div>
   );
 }

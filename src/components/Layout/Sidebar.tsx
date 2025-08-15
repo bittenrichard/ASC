@@ -1,14 +1,7 @@
+// src/components/Layout/Sidebar.tsx
 import React from 'react'
 import { NavLink } from 'react-router-dom'
-import { 
-  BarChart3, 
-  Phone, 
-  Users, 
-  TrendingUp, 
-  LogOut,
-  Trophy,
-  Chrome
-} from 'lucide-react'
+import { BarChart3, Phone, Users, LogOut, Trophy } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 
 export function Sidebar() {
@@ -17,30 +10,28 @@ export function Sidebar() {
   const sdrNavItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard' },
     { to: '/calls', icon: Phone, label: 'Minhas Chamadas' },
-    { to: '/extension', icon: Chrome, label: 'Extensão do Navegador' },
   ]
 
-  const managerNavItems = [
+  const adminNavItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard da Equipe' },
     { to: '/calls', icon: Phone, label: 'Todas as Chamadas' },
     { to: '/leaderboard', icon: Trophy, label: 'Ranking' },
     { to: '/team', icon: Users, label: 'Gerenciar Equipe' },
-    { to: '/extension', icon: Chrome, label: 'Extensão do Navegador' },
   ]
 
-  const navItems = user?.role === 'manager' ? managerNavItems : sdrNavItems
+  const navItems = user?.role === 'administrator' ? adminNavItems : sdrNavItems
 
   return (
     <div className="bg-gray-900 text-white w-64 min-h-screen flex flex-col">
       <div className="p-6">
         <div className="flex items-center space-x-3">
           <div className="bg-blue-600 rounded-lg p-2">
-            <TrendingUp className="h-6 w-6" />
+            <BarChart3 className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">Analisador de Chamadas</h1>
+            <h1 className="text-lg font-bold">Call Analyzer</h1>
             <p className="text-gray-400 text-sm">
-              {user?.role === 'manager' ? 'Gerente de Vendas' : 'Dashboard SDR'}
+              {user?.role === 'administrator' ? 'Painel do Administrador' : 'Dashboard SDR'}
             </p>
           </div>
         </div>
@@ -72,7 +63,7 @@ export function Sidebar() {
         </div>
         <button
           onClick={() => signOut()}
-          className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors"
+          className="w-full flex items-center space-x-2 text-gray-300 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-gray-800"
         >
           <LogOut className="h-4 w-4" />
           <span>Sair</span>

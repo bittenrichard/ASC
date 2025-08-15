@@ -1,13 +1,11 @@
 // src/hooks/useAuth.ts
-
 import { useState, useEffect } from 'react';
 import { baserowService, type BaserowUser } from '../lib/baserowService';
+import bcrypt from 'bcryptjs';
 
-// Re-exportando o tipo para uso em outros componentes
 export type { BaserowUser as AuthUser };
-export type UserRole = 'sdr' | 'manager' | null;
+export type UserRole = 'sdr' | 'administrator' | null;
 
-// Definindo um tipo mais simples para o usuário logado na aplicação
 export interface AppUser {
   id: number;
   email: string;
@@ -15,13 +13,11 @@ export interface AppUser {
   role: UserRole;
 }
 
-// Hook de autenticação refatorado
 export function useAuth() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Tenta recuperar o usuário do localStorage ao iniciar a aplicação
     try {
       const savedUser = localStorage.getItem('appUser');
       if (savedUser) {
@@ -38,30 +34,32 @@ export function useAuth() {
   const signIn = async (email: string, password: string) => {
     setLoading(true);
     try {
-      // Por enquanto, a senha é fixa. A validação principal é se o email existe.
-      if (password !== 'senha123') {
-        return { error: { message: 'Senha incorreta.' } };
-      }
-
       const baserowUser = await baserowService.getUserByEmail(email);
+      if (!baserowUser || !baserowUser.password_hash) {
+        return { error: { message: 'Email ou senha incorretos.' } };
+      }
+      const isPasswordCorrect = await bcrypt.compare(password, baserowUser.password_hash);
+      if (isPasswordCorrect) {
+        const userRole = (baserowUser.role && baserowUser.role.length > 0)
+          ? (baserowUser.role[0].value as UserRole)
+          : null;
 
-      if (baserowUser) {
         const appUser: AppUser = {
           id: baserowUser.id,
           email: baserowUser.email,
           name: baserowUser.name,
-          role: baserowUser.role.value,
+          role: userRole,
         };
-        
+
         localStorage.setItem('appUser', JSON.stringify(appUser));
-        setUser(appUser);
+        setUser(appUser); // <-- Esta linha atualiza o estado
         return { error: null };
       } else {
-        return { error: { message: 'Usuário não encontrado.' } };
+        return { error: { message: 'Email ou senha incorretos.' } };
       }
     } catch (err) {
       console.error("Erro no processo de signIn:", err);
-      return { error: { message: 'Ocorreu um erro inesperado durante o login.' } };
+      return { error: { message: 'Ocorreu um erro inesperado.' } };
     } finally {
       setLoading(false);
     }
@@ -70,13 +68,8 @@ export function useAuth() {
   const signOut = async () => {
     setUser(null);
     localStorage.removeItem('appUser');
-    // Não há necessidade de retornar um objeto, a ação é síncrona no lado do cliente
+    window.location.reload(); // Garante a limpeza total
   };
 
-  return {
-    user,
-    loading,
-    signIn,
-    signOut,
-  };
+  return { user, loading, signIn, signOut };
 }

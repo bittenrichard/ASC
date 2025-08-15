@@ -41,14 +41,13 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
     setIsUploading(true);
     try {
-      // --- LÓGICA DE UPLOAD DO ARQUIVO ---
-      // AVISO: A API para o upload real do arquivo não foi especificada.
-      // Por enquanto, usaremos uma URL de placeholder.
-      // Em um cenário real, aqui entraria o código para enviar o `file`
-      // para um serviço como Amazon S3, Google Cloud Storage ou o próprio storage do Baserow.
+      // --- AVISO: LÓGICA DE UPLOAD DO ARQUIVO ---
+      // A API para o upload real do arquivo para um serviço de storage (como S3, Google Cloud Storage, etc.)
+      // não está implementada. Usaremos uma URL de placeholder como combinado.
+      // Em um cenário real, o arquivo seria enviado para o storage e a URL retornada seria usada abaixo.
       const audioFileUrl = `https://placeholder.com/audio/${file.name}`;
       
-      const duration = 600; // Placeholder para duração
+      const duration = 0; // O ideal seria extrair a duração do áudio no backend. Por agora, deixamos 0.
 
       await baserowService.createCallRecording({
         prospect_name: prospectName,
