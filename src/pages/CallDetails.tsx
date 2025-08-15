@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { mockDataService } from '../lib/mockData'
+import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis'
 
 export function CallDetails() {
   const { callId } = useParams()
@@ -105,6 +106,52 @@ export function CallDetails() {
           }`}>
             {line}
           </span>
+        </div>
+      )
+    })
+  }
+
+  const highlightSpinExcerpts = (transcript: string, spinAnalysis: any) => {
+    if (!spinAnalysis) return formatTranscript(transcript)
+
+    let highlightedTranscript = transcript
+    const colors = {
+      situation: 'bg-blue-100 border-blue-300',
+      problem: 'bg-purple-100 border-purple-300', 
+      implication: 'bg-orange-100 border-orange-300',
+      need_payoff: 'bg-green-100 border-green-300'
+    }
+
+    // Highlight excerpts from each SPIN category
+    Object.entries(colors).forEach(([category, colorClass]) => {
+      const categoryData = spinAnalysis[category]
+      if (categoryData?.excerpts) {
+        categoryData.excerpts.forEach((excerpt: string) => {
+          const regex = new RegExp(excerpt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+          highlightedTranscript = highlightedTranscript.replace(
+            regex, 
+            `<mark class="${colorClass} px-1 rounded border">${excerpt}</mark>`
+          )
+        })
+      }
+    })
+
+    return highlightedTranscript.split('\n').map((line, index) => {
+      const isSDR = line.startsWith('SDR:')
+      const isProspect = line.startsWith('Prospecto:')
+      
+      return (
+        <div key={index} className={`mb-3 ${isSDR ? 'ml-4' : isProspect ? 'mr-4' : ''}`}>
+          <span 
+            className={`inline-block px-3 py-1 rounded-lg text-sm ${
+              isSDR 
+                ? 'bg-blue-50 text-blue-800 font-medium' 
+                : isProspect 
+                  ? 'bg-gray-50 text-gray-800'
+                  : 'text-gray-700'
+            }`}
+            dangerouslySetInnerHTML={{ __html: line }}
+          />
         </div>
       )
     })
@@ -272,13 +319,38 @@ export function CallDetails() {
         </div>
       )}
 
+      {/* SPIN Analysis */}
+      {analysis?.spin_analysis && (
+        <SpinAnalysis spinAnalysis={analysis.spin_analysis} />
+      )}
+
       {/* Transcript */}
       {analysis && analysis.full_transcript && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold mb-4">Transcrição Completa</h3>
           <div className="max-h-96 overflow-y-auto bg-gray-50 rounded-lg p-4">
-            {formatTranscript(analysis.full_transcript)}
+            {highlightSpinExcerpts(analysis.full_transcript, analysis.spin_analysis)}
           </div>
+          {analysis.spin_analysis && (
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+                <span>Situação</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-purple-100 border border-purple-300 rounded"></div>
+                <span>Problema</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-orange-100 border border-orange-300 rounded"></div>
+                <span>Implicação</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+                <span>Necessidade</span>
+              </span>
+            </div>
+          )}
         </div>
       )}
 

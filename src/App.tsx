@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard'
 import Calls from './pages/Calls'
 import { CallDetails } from './pages/CallDetails'
 import { Leaderboard } from './pages/Leaderboard'
+import { Extension } from './pages/Extension'
 
 function App() {
   const { user, loading } = useAuth()
@@ -33,6 +34,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/calls" element={<Calls />} />
             <Route path="/call/:callId" element={<CallDetails />} />
+            <Route path="/extension" element={<Extension />} />
             {user.role === 'manager' && (
               <Route path="/leaderboard" element={<Leaderboard />} />
             )}

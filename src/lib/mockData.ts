@@ -24,6 +24,12 @@ export interface CallAnalysis {
   keywords_detected: string[]
   efficiency_score: number
   manager_feedback: string
+  spin_analysis?: {
+    situation: { score: number; feedback: string; excerpts: string[] }
+    problem: { score: number; feedback: string; excerpts: string[] }
+    implication: { score: number; feedback: string; excerpts: string[] }
+    need_payoff: { score: number; feedback: string; excerpts: string[] }
+  }
 }
 
 export const mockCallRecordings: CallRecording[] = [
@@ -81,7 +87,29 @@ export const mockCallAnalyses: CallAnalysis[] = [
     sentiment: 'Positivo',
     keywords_detected: ['script_abertura', 'perguntas_qualificacao', 'proposta_valor_A', 'proximo_passo_demo'],
     efficiency_score: 85,
-    manager_feedback: 'Ótimo trabalho com a abertura e perguntas de qualificação. Considere encurtar a explicação da proposta de valor para manter o prospecto mais engajado.'
+    manager_feedback: 'Ótimo trabalho com a abertura e perguntas de qualificação. Considere encurtar a explicação da proposta de valor para manter o prospecto mais engajado.',
+    spin_analysis: {
+      situation: {
+        score: 85,
+        feedback: 'Boa identificação da situação atual do cliente, mas poderia explorar mais detalhes sobre o contexto organizacional.',
+        excerpts: ['Entendo que vocês estão buscando melhorar o engajamento com clientes', 'Qual é o processo atual de vendas da empresa?']
+      },
+      problem: {
+        score: 78,
+        feedback: 'Identificou problemas relevantes, mas poderia aprofundar mais nas dores específicas do cliente.',
+        excerpts: ['temos enfrentado dificuldades com taxas de retenção', 'O que mais te preocupa nesse processo?']
+      },
+      implication: {
+        score: 72,
+        feedback: 'Explorou algumas implicações, mas poderia conectar melhor os problemas aos impactos no negócio.',
+        excerpts: ['isso deve estar impactando o crescimento da empresa', 'Como isso afeta seus resultados mensais?']
+      },
+      need_payoff: {
+        score: 88,
+        feedback: 'Excelente apresentação dos benefícios e criação de necessidade. Cliente demonstrou interesse claro.',
+        excerpts: ['Nossa solução pode aumentar a retenção em até 40%', 'Isso resolveria exatamente nosso problema']
+      }
+    }
   },
   {
     analysis_id: '2',
@@ -94,7 +122,29 @@ export const mockCallAnalyses: CallAnalysis[] = [
     sentiment: 'Neutro',
     keywords_detected: ['script_abertura', 'objecao_preco', 'tratamento_objecoes'],
     efficiency_score: 72,
-    manager_feedback: 'Bom tratamento de objeções, mas tente fazer mais perguntas de qualificação no início da chamada.'
+    manager_feedback: 'Bom tratamento de objeções, mas tente fazer mais perguntas de qualificação no início da chamada.',
+    spin_analysis: {
+      situation: {
+        score: 70,
+        feedback: 'Situação identificada adequadamente, mas faltou profundidade na exploração do contexto.',
+        excerpts: ['preenchi o formulário', 'não tenho certeza se isso é adequado para nós']
+      },
+      problem: {
+        score: 65,
+        feedback: 'Problemas identificados, mas poderia ter explorado mais as dores específicas.',
+        excerpts: ['não tenho certeza se isso é adequado', 'temos algumas preocupações com o orçamento']
+      },
+      implication: {
+        score: 68,
+        feedback: 'Algumas implicações foram exploradas, mas poderia ter conectado melhor aos impactos financeiros.',
+        excerpts: ['isso pode afetar nossos resultados', 'precisamos de uma solução mais econômica']
+      },
+      need_payoff: {
+        score: 75,
+        feedback: 'Boa apresentação de benefícios, mas poderia ter focado mais no ROI específico.',
+        excerpts: ['nossa solução oferece excelente custo-benefício', 'isso pode resolver suas preocupações']
+      }
+    }
   },
   {
     analysis_id: '4',
@@ -107,7 +157,29 @@ export const mockCallAnalyses: CallAnalysis[] = [
     sentiment: 'Positivo',
     keywords_detected: ['script_abertura', 'perguntas_qualificacao', 'proposta_valor_B', 'proximo_passo_demo', 'fechamento'],
     efficiency_score: 92,
-    manager_feedback: 'Chamada excelente! Proporção perfeita de fala/escuta e ótimas perguntas de descoberta. Continue assim!'
+    manager_feedback: 'Chamada excelente! Proporção perfeita de fala/escuta e ótimas perguntas de descoberta. Continue assim!',
+    spin_analysis: {
+      situation: {
+        score: 90,
+        feedback: 'Excelente exploração da situação atual. Fez perguntas detalhadas sobre o contexto organizacional.',
+        excerpts: ['vocês estão buscando melhorar o engajamento com clientes', 'Como está estruturado o processo atual?']
+      },
+      problem: {
+        score: 88,
+        feedback: 'Identificação precisa dos problemas. Explorou bem as dores específicas do cliente.',
+        excerpts: ['temos enfrentado dificuldades com taxas de retenção', 'O maior desafio é manter os clientes engajados']
+      },
+      implication: {
+        score: 85,
+        feedback: 'Boa exploração das implicações. Conectou os problemas aos impactos no negócio de forma eficaz.',
+        excerpts: ['isso está impactando diretamente nossa receita recorrente', 'Como isso afeta o crescimento da empresa?']
+      },
+      need_payoff: {
+        score: 95,
+        feedback: 'Apresentação excepcional dos benefícios. Cliente ficou convencido do valor da solução.',
+        excerpts: ['Nossa solução pode aumentar a retenção em até 40%', 'Isso resolveria exatamente nosso problema principal']
+      }
+    }
   }
 ]
 

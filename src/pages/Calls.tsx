@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { mockDataService } from '../lib/mockData';
 import { CallsTable } from '../components/Dashboard/CallsTable';
-import { Calendar, Filter, Search } from 'lucide-react';
+import { Calendar, Filter, Search, Upload, Mic } from 'lucide-react';
+import { UploadModal } from '../components/Calls/UploadModal';
+import { RecordingModal } from '../components/Calls/RecordingModal';
+import toast, { Toaster } from 'react-hot-toast';
 
 const Calls: React.FC = () => {
   const { user } = useAuth();
@@ -13,6 +16,8 @@ const Calls: React.FC = () => {
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sdrs, setSDRs] = useState([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showRecordingModal, setShowRecordingModal] = useState(false);
 
   useEffect(() => {
     fetchCalls();
@@ -36,6 +41,14 @@ const Calls: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUploadSuccess = () => {
+    fetchCalls();
+  };
+
+  const handleRecordingSuccess = () => {
+    fetchCalls();
   };
 
   // Aplicar filtros
@@ -71,6 +84,22 @@ const Calls: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Chamadas</h1>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowRecordingModal(true)}
+            className="flex items-center space-x-2 bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            <Mic className="h-4 w-4" />
+            <span>Gravar Chamada</span>
+          </button>
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Upload className="h-4 w-4" />
+            <span>Enviar Gravação</span>
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -187,6 +216,21 @@ const Calls: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <CallsTable calls={filteredCalls} showSDRColumn={user?.role === 'manager'} />
       </div>
+
+      {/* Modals */}
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUploadSuccess={handleUploadSuccess}
+      />
+      <RecordingModal
+        isOpen={showRecordingModal}
+        onClose={() => setShowRecordingModal(false)}
+        onRecordingSuccess={handleRecordingSuccess}
+      />
+
+      {/* Toast Container */}
+      <Toaster position="top-right" />
     </div>
   );
 };

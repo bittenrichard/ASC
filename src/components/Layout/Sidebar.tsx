@@ -6,7 +6,8 @@ import {
   Users, 
   TrendingUp, 
   LogOut,
-  Trophy
+  Trophy,
+  Chrome
 } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -16,6 +17,7 @@ export function Sidebar() {
   const sdrNavItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard' },
     { to: '/calls', icon: Phone, label: 'Minhas Chamadas' },
+    { to: '/extension', icon: Chrome, label: 'Extensão do Navegador' },
   ]
 
   const managerNavItems = [
@@ -23,6 +25,7 @@ export function Sidebar() {
     { to: '/calls', icon: Phone, label: 'Todas as Chamadas' },
     { to: '/leaderboard', icon: Trophy, label: 'Ranking' },
     { to: '/team', icon: Users, label: 'Gerenciar Equipe' },
+    { to: '/extension', icon: Chrome, label: 'Extensão do Navegador' },
   ]
 
   const navItems = user?.role === 'manager' ? managerNavItems : sdrNavItems
