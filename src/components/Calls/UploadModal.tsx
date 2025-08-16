@@ -28,7 +28,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'audio/*': ['.mp3', '.wav', '.m4a', '.ogg']
+      'audio/*': ['.mp3', '.wav', '.m4a', '.ogg', '.webm']
     },
     maxFiles: 1,
   });
@@ -41,11 +41,8 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
     setIsUploading(true);
     try {
-      // --- AVISO: LÓGICA DE UPLOAD DO ARQUIVO ---
-      // A API para o upload real do arquivo para um serviço de storage (como S3, Google Cloud Storage, etc.)
-      // não está implementada. Usaremos uma URL de placeholder como combinado.
-      // Em um cenário real, o arquivo seria enviado para o storage e a URL retornada seria usada abaixo.
-      const audioFileUrl = `https://placeholder.com/audio/${file.name}`;
+      // --- LÓGICA DE UPLOAD REAL DO ARQUIVO PARA O BASEROW ---
+      const audioFileUrl = await baserowService.uploadFile(file);
       
       const duration = 0; // O ideal seria extrair a duração do áudio no backend. Por agora, deixamos 0.
 

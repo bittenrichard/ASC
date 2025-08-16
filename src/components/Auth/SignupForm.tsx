@@ -1,13 +1,14 @@
 // src/components/Auth/SignupForm.tsx
 
 import React, { useState } from 'react';
-import { UserPlus, Loader2 } from 'lucide-react';
+import { UserPlus, Loader2, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { baserowService } from '../../lib/baserowService';
 import toast from 'react-hot-toast';
 
 export function SignupForm() {
   const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,105 +16,87 @@ export function SignupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !companyName) {
       toast.error("Por favor, preencha todos os campos.");
       return;
     }
     setLoading(true);
-
     try {
-      const existingUser = await baserowService.getUserByEmail(email);
-      if (existingUser) {
-        toast.error("Este endereço de e-mail já está em uso.");
-        setLoading(false);
-        return;
-      }
-      
-      // Toda nova conta criada por este formulário será um 'administrator'
-      await baserowService.createUser({
-        name,
-        email,
-        role: 'administrator', // Role fixo
-        password,
-      });
-
-      toast.success("Conta de Administrador criada com sucesso! Você já pode fazer o login.");
-      navigate('/'); 
-
-    } catch (err) {
-      console.error("Erro no cadastro:", err);
-      toast.error("Ocorreu um erro ao criar a conta. Tente novamente.");
+      await baserowService.signUpAdmin({ name, email, password, companyName });
+      toast.success("Empresa registada com sucesso! Agora pode fazer o login.");
+      navigate('/');
+    } catch (err: any) {
+      console.error("Erro no registo:", err);
+      toast.error(err.message || "Ocorreu um erro ao criar a conta. Tente novamente.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <div className="text-center mb-8">
-            <div className="mx-auto h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center mb-4">
-              <UserPlus className="h-6 w-6 text-white" />
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-background font-sans">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+            <div className="inline-block bg-primary-light p-3 rounded-2xl mb-4">
+                <div className="bg-primary p-3 rounded-xl">
+                    <UserPlus className="h-6 w-6 text-white" />
+                </div>
             </div>
-            <h2 className="text-3xl font-bold text-gray-900">Criar Conta de Administrador</h2>
-            <p className="mt-2 text-gray-600">Junte-se ao Analisador de Chamadas SDR</p>
-          </div>
-
+          <h1 className="text-3xl font-bold text-text-primary">Registe a Sua Empresa</h1>
+          <p className="text-text-secondary mt-2">Crie a conta principal para o seu negócio no Copiloto SDR.</p>
+        </div>
+        <div className="bg-surface p-8 rounded-2xl shadow-lg">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">Seu Nome Completo</label>
+              <label htmlFor="companyName" className="block text-sm font-medium text-text-primary mb-1">Nome da Empresa</label>
               <input
-                id="name"
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500"
-                placeholder="Seu nome"
+                id="companyName" type="text" required value={companyName} onChange={(e) => setCompanyName(e.target.value)}
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="O nome da sua empresa"
               />
             </div>
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">Seu Email de Trabalho</label>
+              <label htmlFor="name" className="block text-sm font-medium text-text-primary mb-1">Seu Nome Completo</label>
               <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500"
+                id="name" type="text" required value={name} onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="O seu nome"
+              />
+            </div>
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-text-primary mb-1">Seu Email de Trabalho</label>
+              <input
+                id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="seu.email@empresa.com"
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Senha</label>
+              <label htmlFor="password" className="block text-sm font-medium text-text-primary mb-1">Senha</label>
               <input
-                id="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500"
+                id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Crie uma senha segura"
               />
             </div>
-            
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              type="submit" disabled={loading}
+              className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-semibold text-white bg-primary hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-300"
             >
-              {loading ? <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" /> : 'Criar Conta'}
+              {loading ? (
+                <><Loader2 className="animate-spin h-5 w-5" />A criar conta...</>
+              ) : (
+                <>Criar Conta<ArrowRight className="h-5 w-5" /></>
+              )}
             </button>
-
-            <p className="text-center text-sm text-gray-600">
-              Já tem uma conta?{' '}
-              <Link to="/" className="font-medium text-blue-600 hover:text-blue-500">
-                Faça o login
-              </Link>
-            </p>
           </form>
         </div>
+        <p className="text-center text-sm text-text-secondary mt-6">
+          Já tem uma conta?{' '}
+          <Link to="/" className="font-semibold text-primary hover:underline">
+            Faça o login
+          </Link>
+        </p>
       </div>
     </div>
   );

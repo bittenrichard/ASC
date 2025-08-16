@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { baserowService } from '../lib/baserowService';
-import { Users, Mail, Plus, Loader2, Trash2 } from 'lucide-react';
+import { Users, Mail, Plus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface TeamMember {
@@ -13,132 +13,117 @@ interface TeamMember {
 }
 
 export function TeamManagement() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePassword, setInvitePassword] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
   const fetchTeamData = useCallback(async () => {
-    if (user?.role === 'administrator') {
-      setLoading(true);
-      try {
-        const sdrs = await baserowService.getAllSDRs(user.id);
-        setTeamMembers(sdrs);
-      } catch (error) {
-        console.error("Erro ao buscar dados da equipe:", error);
-        toast.error("Não foi possível carregar os dados da equipe.");
-      } finally {
-        setLoading(false);
-      }
+    if (!user || !user.organizationId) {
+        setLoadingData(false);
+        return;
+    };
+    
+    setLoadingData(true);
+    try {
+      const sdrs = await baserowService.getAllSDRs(user.organizationId);
+      setTeamMembers(sdrs.map(sdr => ({ id: sdr.id, name: sdr.Name, email: sdr.Email })));
+    } catch (error) {
+      console.error("Erro ao buscar dados da equipe:", error);
+      toast.error("Não foi possível carregar os dados da equipe.");
+    } finally {
+      setLoadingData(false);
     }
   }, [user]);
 
   useEffect(() => {
-    fetchTeamData();
-  }, [fetchTeamData]);
+    if (!authLoading) {
+        fetchTeamData();
+    }
+  }, [authLoading, fetchTeamData]);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail || !inviteName || !invitePassword || !user) return;
     setIsInviting(true);
-
     try {
-      const existingUser = await baserowService.getUserByEmail(inviteEmail);
-      if (existingUser) {
-        toast.error("Um usuário com este e-mail já existe.");
-        setIsInviting(false);
-        return;
-      }
-      
-      await baserowService.createUser({
+      await baserowService.createSDR({
         name: inviteName,
         email: inviteEmail,
-        password: invitePassword, // Senha definida pelo admin
-        role: 'sdr',
-        managerId: user.id,
+        password: invitePassword,
+        organizationId: user.organizationId,
       });
-
       toast.success(`${inviteName} foi cadastrado com sucesso!`);
       setInviteName('');
       setInviteEmail('');
       setInvitePassword('');
-      fetchTeamData(); 
-    
-    } catch (error) {
+      fetchTeamData();
+    } catch (error: any) {
       console.error("Erro ao cadastrar membro:", error);
-      toast.error("Falha ao cadastrar novo SDR.");
+      toast.error(error.message || "Falha ao cadastrar novo SDR.");
     } finally {
       setIsInviting(false);
     }
   };
 
-  if (loading) {
-    return <div className="p-6 text-center text-gray-500">Carregando equipe...</div>;
+  if (authLoading || loadingData) {
+    return <div className="p-8 text-center text-text-secondary">A carregar equipe...</div>;
   }
-
+  
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Gerenciar Equipe</h1>
-        <p className="text-gray-600">Cadastre novos SDRs e veja os membros da sua equipe.</p>
+        <h1 className="text-3xl font-bold text-text-primary">Gerir Equipe</h1> {/* CORRIGIDO */}
+        <p className="text-text-secondary mt-1">Cadastre novos SDRs e veja os membros da sua equipe.</p> {/* CORRIGIDO */}
       </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Cadastrar Novo SDR</h3>
+      <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
+        <h3 className="text-xl font-bold text-text-primary mb-6">Cadastrar Novo SDR</h3>
         <form onSubmit={handleInvite} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label htmlFor="inviteName" className="block text-sm font-medium text-gray-700">Nome</label>
-              <input id="inviteName" type="text" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Nome do SDR" required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"/>
+              <label htmlFor="inviteName" className="block text-sm font-medium text-text-primary mb-1">Nome do SDR</label>
+              <input id="inviteName" type="text" value={inviteName} onChange={(e) => setInviteName(e.target.value)} placeholder="Nome completo" required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
             </div>
             <div>
-              <label htmlFor="inviteEmail" className="block text-sm font-medium text-gray-700">Email</label>
-              <input id="inviteEmail" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="email@empresa.com" required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"/>
+              <label htmlFor="inviteEmail" className="block text-sm font-medium text-text-primary mb-1">Email</label>
+              <input id="inviteEmail" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="email@empresa.com" required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
             </div>
             <div>
-              <label htmlFor="invitePassword" className="block text-sm font-medium text-gray-700">Senha Inicial</label>
-              <input id="invitePassword" type="password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} placeholder="Senha para o primeiro acesso" required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"/>
+              <label htmlFor="invitePassword" className="block text-sm font-medium text-text-primary mb-1">Senha Inicial</label>
+              <input id="invitePassword" type="password" value={invitePassword} onChange={(e) => setInvitePassword(e.target.value)} placeholder="Senha para o primeiro acesso" required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
             </div>
           </div>
-          <div className="flex justify-end">
+          <div className="flex justify-end pt-4">
             <button
               type="submit"
               disabled={isInviting || !inviteEmail || !inviteName || !invitePassword}
-              className="flex justify-center items-center space-x-2 w-full md:w-auto bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="flex justify-center items-center gap-2 py-3 px-6 border border-transparent rounded-lg shadow-sm text-base font-semibold text-white bg-primary hover:opacity-90 focus:outline-none disabled:opacity-50"
             >
               {isInviting ? <Loader2 className="w-5 h-5 animate-spin"/> : <Plus className="w-5 h-5" />}
-              <span>{isInviting ? 'Cadastrando...' : 'Cadastrar SDR'}</span>
+              <span>{isInviting ? 'A cadastrar...' : 'Cadastrar SDR'}</span>
             </button>
           </div>
         </form>
       </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b">
-          <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-            <Users className="w-5 h-5 mr-2" />
-            Membros da Equipe ({teamMembers.length})
-          </h3>
-        </div>
-        <ul>
-          {teamMembers.map((member) => (
-            <li key={member.id} className="flex items-center justify-between p-4 border-b last:border-b-0 hover:bg-gray-50">
-              <div>
-                <p className="font-medium text-gray-900">{member.name}</p>
-                <p className="text-sm text-gray-500 flex items-center"><Mail className="w-4 h-4 mr-2" />{member.email}</p>
+      <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
+        <h3 className="text-xl font-bold text-text-primary mb-6">Membros da Equipe ({teamMembers.length})</h3> {/* CORRIGIDO */}
+        <div className="space-y-4">
+          {teamMembers.length > 0 ? (
+            teamMembers.map((member) => (
+              <div key={member.id} className="flex items-center justify-between p-4 bg-background rounded-lg">
+                <div>
+                  <p className="font-semibold text-text-primary">{member.name}</p>
+                  <p className="text-sm text-text-secondary flex items-center gap-2"><Mail className="w-4 h-4" />{member.email}</p>
+                </div>
               </div>
-              <button className="text-red-500 hover:text-red-700 p-2 rounded-md hover:bg-red-50">
-                <Trash2 className="w-5 h-5" />
-              </button>
-            </li>
-          ))}
-        </ul>
-        {teamMembers.length === 0 && (
-          <p className="text-center py-8 text-gray-500">Você ainda não cadastrou nenhum SDR.</p>
-        )}
+            ))
+          ) : (
+            <p className="text-center py-8 text-text-secondary">Você ainda não cadastrou nenhum SDR.</p>
+          )}
+        </div>
       </div>
     </div>
   );

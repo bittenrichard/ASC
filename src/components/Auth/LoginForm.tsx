@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LogIn, Loader2 } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { LogIn, Loader2, ArrowRight } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth.tsx';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
@@ -16,40 +16,29 @@ export function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
-
-    try {
-      const { error } = await signIn(email, password);
-      if (error) {
-        setError(error.message);
-        setLoading(false); // Para o loading em caso de erro
-      } else {
-        // --- CORREÇÃO APLICADA AQUI ---
-        // Força o recarregamento da página após o sucesso do login.
-        // O App.tsx irá detectar o usuário logado e redirecionar para o /dashboard.
-        window.location.reload();
-      }
-    } catch (err) {
-      setError('Ocorreu um erro inesperado');
+    const { error: signInError } = await signIn(email, password);
+    if (signInError) {
+      setError(signInError.message);
       setLoading(false);
     }
-    // Não precisamos mais do `finally` aqui, pois o loading é controlado nos branches de erro/sucesso.
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full space-y-8">
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <div className="text-center mb-8">
-            <div className="mx-auto h-12 w-12 bg-blue-600 rounded-lg flex items-center justify-center mb-4">
-              <LogIn className="h-6 w-6 text-white" />
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-background font-sans">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+            <div className="inline-block bg-primary-light p-3 rounded-2xl mb-4">
+                <div className="bg-primary p-3 rounded-xl">
+                    <LogIn className="h-6 w-6 text-white" />
+                </div>
             </div>
-            <h2 className="text-3xl font-bold text-gray-900">Analisador de Chamadas SDR</h2>
-            <p className="mt-2 text-gray-600">Entre na sua conta</p>
-          </div>
-
+          <h1 className="text-3xl font-bold text-text-primary">Bem-vindo de Volta!</h1>
+          <p className="text-text-secondary mt-2">Entre na sua conta para continuar.</p>
+        </div>
+        <div className="bg-surface p-8 rounded-2xl shadow-lg">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-medium text-text-primary mb-1">
                 Endereço de email
               </label>
               <input
@@ -59,13 +48,12 @@ export function LoginForm() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Digite seu email"
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="seu.email@empresa.com"
               />
             </div>
-
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-text-primary mb-1">
                 Senha
               </label>
               <input
@@ -75,47 +63,34 @@ export function LoginForm() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Digite sua senha"
+                className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="Digite a sua senha"
               />
             </div>
-
             {error && (
-              <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md">
+              <div className="text-red-500 text-sm text-center bg-red-100 p-3 rounded-lg">
                 {error}
               </div>
             )}
-
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-semibold text-white bg-primary hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-300"
             >
               {loading ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                  Entrando...
-                </>
+                <><Loader2 className="animate-spin h-5 w-5" />A entrar...</>
               ) : (
-                'Entrar'
+                <>Entrar<ArrowRight className="h-5 w-5" /></>
               )}
             </button>
-            
-            <p className="text-center text-sm text-gray-600">
-              Não tem uma conta?{' '}
-              <Link to="/signup" className="font-medium text-blue-600 hover:text-blue-500">
-                Cadastre-se
-              </Link>
-            </p>
-
           </form>
-
-          <div className="mt-6 text-xs text-gray-500 space-y-1">
-             <p><strong>Para testar:</strong></p>
-             <p>1. Crie uma conta de Administrador na tela de cadastro.</p>
-             <p>2. Faça login com a conta criada.</p>
-          </div>
         </div>
+        <p className="text-center text-sm text-text-secondary mt-6">
+          Não tem uma conta?{' '}
+          <Link to="/signup" className="font-semibold text-primary hover:underline">
+            Registe a sua empresa
+          </Link>
+        </p>
       </div>
     </div>
   );

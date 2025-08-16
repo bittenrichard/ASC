@@ -40,7 +40,7 @@ export function RecordingModal({ isOpen, onClose, onUploadComplete }: RecordingM
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       mediaRecorderRef.current = mediaRecorder;
       
       const audioChunks: Blob[] = [];
@@ -84,9 +84,11 @@ export function RecordingModal({ isOpen, onClose, onUploadComplete }: RecordingM
 
     setIsUploading(true);
     try {
-      // --- AVISO: LÓGICA DE UPLOAD DO ARQUIVO ---
-      // Assim como no upload manual, esta é uma URL de placeholder.
-      const audioFileUrl = `https://placeholder.com/audio/recording-${Date.now()}.webm`;
+      // Converte o Blob para um objeto File para enviar ao serviço
+      const audioFile = new File([audioBlob], `gravacao-${Date.now()}.webm`, { type: 'audio/webm' });
+
+      // --- LÓGICA DE UPLOAD REAL DO ARQUIVO PARA O BASEROW ---
+      const audioFileUrl = await baserowService.uploadFile(audioFile);
       
       await baserowService.createCallRecording({
         prospect_name: prospectName,
