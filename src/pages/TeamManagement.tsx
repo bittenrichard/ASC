@@ -1,9 +1,8 @@
 // src/pages/TeamManagement.tsx
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { baserowService } from '../lib/baserowService';
-import { Users, Mail, Plus, Loader2 } from 'lucide-react';
+import { Mail, Plus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface TeamMember {
@@ -26,11 +25,10 @@ export function TeamManagement() {
         setLoadingData(false);
         return;
     };
-    
     setLoadingData(true);
     try {
       const sdrs = await baserowService.getAllSDRs(user.organizationId);
-      setTeamMembers(sdrs.map(sdr => ({ id: sdr.id, name: sdr.Name, email: sdr.Email })));
+      setTeamMembers(sdrs);
     } catch (error) {
       console.error("Erro ao buscar dados da equipe:", error);
       toast.error("Não foi possível carregar os dados da equipe.");
@@ -76,8 +74,8 @@ export function TeamManagement() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-text-primary">Gerir Equipe</h1> {/* CORRIGIDO */}
-        <p className="text-text-secondary mt-1">Cadastre novos SDRs e veja os membros da sua equipe.</p> {/* CORRIGIDO */}
+        <h1 className="text-3xl font-bold text-text-primary">Gerir Equipe</h1>
+        <p className="text-text-secondary mt-1">Cadastre novos SDRs e veja os membros da sua equipe.</p>
       </div>
       <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
         <h3 className="text-xl font-bold text-text-primary mb-6">Cadastrar Novo SDR</h3>
@@ -109,7 +107,7 @@ export function TeamManagement() {
         </form>
       </div>
       <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
-        <h3 className="text-xl font-bold text-text-primary mb-6">Membros da Equipe ({teamMembers.length})</h3> {/* CORRIGIDO */}
+        <h3 className="text-xl font-bold text-text-primary mb-6">Membros da Equipe ({teamMembers.length})</h3>
         <div className="space-y-4">
           {teamMembers.length > 0 ? (
             teamMembers.map((member) => (
