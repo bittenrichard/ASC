@@ -10,6 +10,7 @@ import Calls from './pages/Calls';
 import { CallDetails } from './pages/CallDetails';
 import { Leaderboard } from './pages/Leaderboard';
 import { TeamManagement } from './pages/TeamManagement';
+import { Goals } from './pages/Goals'; // Importação corrigida
 
 const PrivateLayout = () => (
   <div className="flex h-screen bg-background">
@@ -50,6 +51,7 @@ function AppRoutes() {
               <>
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 <Route path="/team" element={<TeamManagement />} />
+                <Route path="/goals" element={<Goals />} />
               </>
             )}
           </Route>

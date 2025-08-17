@@ -1,7 +1,7 @@
 // src/components/Layout/Sidebar.tsx
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Users, LogOut, Trophy } from 'lucide-react';
+import { BarChart3, Phone, Users, LogOut, Trophy, Target } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
 export function Sidebar() {
@@ -15,9 +15,10 @@ export function Sidebar() {
 
   const adminNavItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard' },
+    { to: '/goals', icon: Target, label: 'Metas' }, // Novo item de navegação
     { to: '/calls', icon: Phone, label: 'Chamadas' },
     { to: '/leaderboard', icon: Trophy, label: 'Ranking' },
-    { to: '/team', icon: Users, label: 'Equipe' }, // CORRIGIDO
+    { to: '/team', icon: Users, label: 'Equipe' },
   ];
 
   const sdrNavItems = [

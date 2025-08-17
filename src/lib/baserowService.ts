@@ -9,21 +9,45 @@ export interface BaserowCallRecording extends BaserowObject {}
 export interface BaserowCallAnalysis extends BaserowObject {}
 export interface BaserowUser extends BaserowObject {}
 export interface BaserowOrganization extends BaserowObject {}
+export interface BaserowGoal extends BaserowObject {
+  [FIELD_IDS.goals.name]: string;
+  [FIELD_IDS.goals.metric]: { value: string };
+  [FIELD_IDS.goals.startDate]: string;
+  [FIELD_IDS.goals.endDate]: string;
+  [FIELD_IDS.goals.targetValue]: number;
+  [FIELD_IDS.goals.assignedTo]: { id: number, value: string }[];
+}
+export interface SpinAnalysisData {
+  situation: { score: number; feedback: string; excerpts: string[] };
+  problem: { score: number; feedback: string; excerpts: string[] };
+  implication: { score: number; feedback: string; excerpts: string[] };
+  need_payoff: { score: number; feedback: string; excerpts: string[] };
+}
 
 // --- Configuração da API ---
 const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
 const API_TOKEN = import.meta.env.VITE_BASEROW_API_TOKEN;
 const TABLE_IDS = {
-  users: import.meta.env.VITE_BASEROW_TABLE_USERS,
-  organizations: import.meta.env.VITE_BASEROW_TABLE_ORGANIZATIONS,
-  callRecordings: import.meta.env.VITE_BASEROW_TABLE_CALL_RECORDINGS,
-  analyses: import.meta.env.VITE_BASEROW_TABLE_ANALYSES,
+  users: '698',
+  organizations: '696',
+  callRecordings: '700',
+  analyses: '701',
+  goals: '702',
 };
 const FIELD_IDS = {
   users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
   organizations: { name: 'field_6746', owner: 'field_6761' },
-  callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781' },
-  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782' }
+  callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
+  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6778', spinAnalysis: 'field_6793' },
+  goals: { 
+    name: 'field_6783', // Nome da Meta
+    metric: 'field_6784', // Métrica
+    startDate: 'field_6785', // Data de Início
+    endDate: 'field_6786', // Data de Fim
+    targetValue: 'field_6787', // Valor Alvo
+    assignedTo: 'field_6788', // Atribuído a
+    organization: 'field_6790' // Organização
+  },
 };
 const ROLE_OPTION_IDS = {
     administrator: 2994,
@@ -59,6 +83,7 @@ async function listRows<T>(tableId: string, filters: { [key: string]: any } = {}
   const linkRowFieldIds = [
     FIELD_IDS.users.organization, FIELD_IDS.organizations.owner, FIELD_IDS.callRecordings.sdr,
     FIELD_IDS.callRecordings.organization, FIELD_IDS.analyses.callRecording, FIELD_IDS.analyses.organization,
+    FIELD_IDS.goals.assignedTo, FIELD_IDS.goals.organization
   ];
   Object.entries(filters).forEach(([fieldId, value]) => {
       const isLinkField = linkRowFieldIds.includes(fieldId);
@@ -129,12 +154,12 @@ export const baserowService = {
 
   // RESTAURAÇÃO DAS FUNÇÕES EM FALTA
   getCallRecordings: (organizationId: number) => listRows<BaserowCallRecording>(TABLE_IDS.callRecordings, { [FIELD_IDS.callRecordings.organization]: organizationId }),
-  getCallAnalyses: (organizationId: number) => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses, { [FIELD_IDS.analyses.organization]: organizationId }),
+  getCallAnalyses: () => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses),
   getCallRecordingById: (recordingId: number) => getRow<BaserowCallRecording>(TABLE_IDS.callRecordings, recordingId),
   getAnalysisByRecordingId: (recordingId: number) => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses, { [FIELD_IDS.analyses.callRecording]: recordingId }).then(res => res[0] || null),
   getSDRById: (sdrId: number) => getRow<BaserowUser>(TABLE_IDS.users, sdrId),
   updateManagerFeedback: (analysisId: number, feedback: string) => updateRow(TABLE_IDS.analyses, analysisId, { [FIELD_IDS.analyses.managerFeedback]: feedback }),
-  // signUpAdmin não é usado após o login, mas pode ser útil no futuro
+  
   async signUpAdmin(data: { name: string; email: string; password: string; companyName: string }) {
     const existingUsers = await listRows(TABLE_IDS.users, { [FIELD_IDS.users.email]: data.email });
     if (existingUsers.length > 0) throw new Error("Este endereço de email já está em uso.");
@@ -147,5 +172,73 @@ export const baserowService = {
     const newOrgRow = { [FIELD_IDS.organizations.name]: data.companyName, [FIELD_IDS.organizations.owner]: [newUser.id] };
     const newOrg = await createRow<BaserowObject>(TABLE_IDS.organizations, newOrgRow);
     await updateRow(TABLE_IDS.users, newUser.id, { [FIELD_IDS.users.organization]: [newOrg.id] });
+  },
+
+  // --- Funções da nova API de Metas e Relatórios ---
+  async createGoal(data: { name: string; metric: string; startDate: string; endDate: string; targetValue: number; assignedTo: number[]; organizationId: number; }) {
+    const newGoalRow = {
+      [FIELD_IDS.goals.name]: data.name,
+      [FIELD_IDS.goals.metric]: { value: data.metric },
+      [FIELD_IDS.goals.startDate]: data.startDate,
+      [FIELD_IDS.goals.endDate]: data.endDate,
+      [FIELD_IDS.goals.targetValue]: data.targetValue,
+      [FIELD_IDS.goals.assignedTo]: data.assignedTo,
+      [FIELD_IDS.goals.organization]: [data.organizationId],
+    };
+    return createRow<BaserowGoal>(TABLE_IDS.goals, newGoalRow);
+  },
+
+  async getGoals(organizationId: number): Promise<BaserowGoal[]> {
+    const filters: { [key: string]: any } = {
+      [FIELD_IDS.goals.organization]: organizationId,
+    };
+    return listRows<BaserowGoal>(TABLE_IDS.goals, filters);
+  },
+
+  async getTeamSpinScores(organizationId: number, startDate: string, endDate: string) {
+    const analyses = await baserowService.getCallAnalyses();
+
+    const filteredAnalyses = analyses.filter(a => {
+      const isFromOrg = a.Organization?.[0]?.id === organizationId;
+      const callRecordingLink = a.Call_Recording && a.Call_Recording.length > 0 ? a.Call_Recording[0] : null;
+      if (!isFromOrg || !callRecordingLink) return false;
+
+      const callDate = new Date(callRecordingLink.Call_Date);
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      return callDate >= start && callDate <= end;
+    });
+
+    if (filteredAnalyses.length === 0) {
+      return {
+        situation: 0, problem: 0, implication: 0, need_payoff: 0,
+      };
+    }
+
+    const totalScores = {
+      situation: 0, problem: 0, implication: 0, need_payoff: 0,
+    };
+
+    filteredAnalyses.forEach(a => {
+      if (a[FIELD_IDS.analyses.spinAnalysis]) {
+        try {
+          const spinData = JSON.parse(a[FIELD_IDS.analyses.spinAnalysis]);
+          totalScores.situation += spinData.situation.score;
+          totalScores.problem += spinData.problem.score;
+          totalScores.implication += spinData.implication.score;
+          totalScores.need_payoff += spinData.need_payoff.score;
+        } catch (e) {
+          console.error("Erro ao parsear a análise SPIN:", e);
+        }
+      }
+    });
+
+    return {
+      situation: totalScores.situation / filteredAnalyses.length,
+      problem: totalScores.problem / filteredAnalyses.length,
+      implication: totalScores.implication / filteredAnalyses.length,
+      need_payoff: totalScores.need_payoff / filteredAnalyses.length,
+    };
   },
 };
