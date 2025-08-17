@@ -1,5 +1,4 @@
 // src/components/Calls/UploadModal.tsx
-
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, X, Loader2, FileAudio } from 'lucide-react';
@@ -20,45 +19,37 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const [isUploading, setIsUploading] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      setFile(acceptedFiles[0]);
-    }
+    if (acceptedFiles.length > 0) setFile(acceptedFiles[0]);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'audio/*': ['.mp3', '.wav', '.m4a', '.ogg', '.webm']
-    },
+    accept: { 'audio/*': ['.mp3', '.wav', '.m4a', '.ogg', '.webm'] },
     maxFiles: 1,
   });
 
   const handleUpload = async () => {
-    if (!file || !prospectName || !user) {
-      toast.error("Por favor, preencha o nome do prospecto e selecione um arquivo.");
-      return;
-    }
-
+    if (!file || !prospectName || !user) return;
     setIsUploading(true);
     try {
-      // --- LÓGICA DE UPLOAD REAL DO ARQUIVO PARA O BASEROW ---
-      const audioFileUrl = await baserowService.uploadFile(file);
+      // 1. Enviar o arquivo e obter a referência
+      const uploadedFile = await baserowService.uploadFile(file);
       
-      const duration = 0; // O ideal seria extrair a duração do áudio no backend. Por agora, deixamos 0.
-
+      // 2. Criar o registo da chamada com a referência do arquivo
       await baserowService.createCallRecording({
-        prospect_name: prospectName,
-        sdr_id: user.id,
-        call_duration_seconds: duration,
-        audio_file_url: audioFileUrl,
+        prospectName: prospectName,
+        sdrId: user.id,
+        organizationId: user.organizationId,
+        duration: 0, // Idealmente, obteríamos isso do arquivo
+        fileData: [{ name: uploadedFile.name }],
       });
 
-      toast.success("Gravação enviada com sucesso! A análise foi iniciada.");
-      onUploadComplete(); // Avisa o componente pai para recarregar os dados
-      handleClose(); // Fecha o modal
-    } catch (error) {
+      toast.success("Gravação enviada com sucesso!");
+      onUploadComplete();
+      handleClose();
+    } catch (error: any) {
       console.error("Falha no upload da gravação:", error);
-      toast.error("Não foi possível enviar a gravação. Tente novamente.");
+      toast.error(error.message || "Não foi possível enviar a gravação.");
     } finally {
       setIsUploading(false);
     }
@@ -73,67 +64,46 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md m-4">
+     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md m-4">
         <div className="p-6 border-b flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-800">Enviar Nova Gravação</h2>
-          <button onClick={handleClose} className="p-1 rounded-full hover:bg-gray-100">
-            <X className="w-5 h-5 text-gray-500" />
+          <h2 className="text-xl font-bold text-text-primary">Enviar Nova Gravação</h2>
+          <button onClick={handleClose} className="p-2 rounded-full hover:bg-background">
+            <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
-        <div className="p-6 space-y-6">
+        <div className="p-8 space-y-6">
           <div>
-            <label htmlFor="prospectName" className="block text-sm font-medium text-gray-700 mb-1">
-              Nome do Prospecto
-            </label>
-            <input
-              type="text"
-              id="prospectName"
-              value={prospectName}
-              onChange={(e) => setProspectName(e.target.value)}
+            <label htmlFor="prospectName" className="block text-sm font-medium text-text-primary mb-1">Nome do Prospecto</label>
+            <input type="text" id="prospectName" value={prospectName} onChange={(e) => setProspectName(e.target.value)}
               placeholder="Ex: João da Silva - Acme Corp"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+              className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Arquivo de Áudio
-            </label>
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'}`}
-            >
+            <label className="block text-sm font-medium text-text-primary mb-1">Arquivo de Áudio</label>
+            <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-gray-300 hover:border-primary/50'}`}>
               <input {...getInputProps()} />
               {file ? (
-                <div className="flex flex-col items-center text-gray-700">
-                  <FileAudio className="w-10 h-10 mb-2 text-green-500" />
+                <div className="flex flex-col items-center text-text-primary">
+                  <FileAudio className="w-12 h-12 mb-2 text-accent" />
                   <p className="font-semibold">{file.name}</p>
-                  <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <p className="text-xs text-text-secondary">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                 </div>
               ) : (
-                <div className="flex flex-col items-center text-gray-500">
-                  <UploadCloud className="w-10 h-10 mb-2" />
-                  <p className="font-semibold">
-                    {isDragActive ? 'Solte o arquivo aqui!' : 'Arraste e solte o arquivo de áudio'}
-                  </p>
+                <div className="flex flex-col items-center text-text-secondary">
+                  <UploadCloud className="w-12 h-12 mb-2" />
+                  <p className="font-semibold">{isDragActive ? 'Solte o arquivo aqui!' : 'Arraste e solte o arquivo'}</p>
                   <p className="text-sm">ou clique para selecionar</p>
                 </div>
               )}
             </div>
           </div>
         </div>
-        <div className="p-6 bg-gray-50 rounded-b-lg flex justify-end space-x-4">
-          <button onClick={handleClose} className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
-            Cancelar
-          </button>
-          <button
-            onClick={handleUpload}
-            disabled={isUploading || !file || !prospectName}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-          >
-            {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isUploading ? 'Enviando...' : 'Enviar para Análise'}
+        <div className="p-6 bg-background rounded-b-2xl flex justify-end space-x-4">
+          <button onClick={handleClose} className="px-5 py-2.5 bg-surface border border-gray-200 rounded-lg text-text-primary font-semibold hover:bg-gray-50">Cancelar</button>
+          <button onClick={handleUpload} disabled={isUploading || !file || !prospectName} className="px-5 py-2.5 bg-primary text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+            {isUploading && <Loader2 className="w-5 h-5 animate-spin" />}
+            {isUploading ? 'A enviar...' : 'Enviar para Análise'}
           </button>
         </div>
       </div>

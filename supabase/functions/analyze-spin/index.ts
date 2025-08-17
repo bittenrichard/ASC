@@ -1,118 +1,86 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// supabase/functions/analyze-spin/index.ts
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { OpenAI } from 'https://deno.land/x/openai/mod.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
 
-interface SpinAnalysis {
-  situation: {
-    score: number
-    feedback: string
-    excerpts: string[]
-  }
-  problem: {
-    score: number
-    feedback: string
-    excerpts: string[]
-  }
-  implication: {
-    score: number
-    feedback: string
-    excerpts: string[]
-  }
-  need_payoff: {
-    score: number
-    feedback: string
-    excerpts: string[]
-  }
-}
+// Inicializa o cliente da OpenAI com a chave do ambiente Supabase
+const openai = new OpenAI(Deno.env.get('VITE_OPENAI_API_KEY') || '');
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { callId, transcript } = await req.json()
+    const { audioUrl, playbookRules } = await req.json();
 
-    if (!callId || !transcript) {
-      return new Response(
-        JSON.stringify({ error: 'callId and transcript are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    if (!audioUrl) {
+      throw new Error('A URL do áudio (audioUrl) é obrigatória.');
     }
 
-    // Initialize Supabase client
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    // 1. Transcrição com Whisper API
+    console.log(`Iniciando transcrição para: ${audioUrl}`);
+    const transcription = await openai.createTranscription({
+      model: 'whisper-1',
+      file: audioUrl, // O SDK da OpenAI para Deno pode aceitar uma URL diretamente
+    });
+    const transcript = transcription.text;
+    console.log(`Transcrição concluída: "${transcript.substring(0, 100)}..."`);
 
-    // SPIN Selling analysis prompt
-    const prompt = `Você é um coach de vendas sênior, especialista na metodologia SPIN Selling. Sua tarefa é analisar a transcrição de uma chamada de vendas e avaliar a performance do SDR. Identifique os trechos exatos da transcrição que correspondem a cada uma das quatro categorias do SPIN: Situação, Problema, Implicação e Necessidade. Para cada categoria, forneça uma nota de 0 a 100 sobre a qualidade da execução pelo SDR e um feedback construtivo. Retorne sua análise estritamente no seguinte formato JSON: {"situation": {"score": number, "feedback": string, "excerpts": string[]}, "problem": {"score": number, "feedback": string, "excerpts": string[]}, "implication": {"score": number, "feedback": string, "excerpts": string[]}, "need_payoff": {"score": number, "feedback": string, "excerpts": string[]}}
+    // 2. Análise com GPT-4o-mini
+    const analysisPrompt = `
+      Você é um analista de vendas sênior. Analise a seguinte transcrição de uma chamada de vendas e retorne um objeto JSON.
+      A transcrição é: "${transcript}"
 
-Transcrição da chamada:
-${transcript}`
+      Siga estritamente as seguintes regras para a análise:
+      
+      a) Análise SPIN: Avalie cada uma das 4 fases (Situação, Problema, Implicação, Necessidade) em uma escala de 0 a 100. Forneça um feedback curto e objetivo para cada fase.
+      
+      b) Análise de Playbook: Verifique se as seguintes regras do playbook foram seguidas na transcrição. As regras são: ${JSON.stringify(playbookRules)}
+      Para cada regra, indique se foi seguida (followed: true/false) e forneça um detalhe curto.
+      Calcule uma pontuação de aderência (adherence_score) de 0 a 100 com base na porcentagem de regras seguidas.
 
-    // For demo purposes, we'll use a mock analysis
-    // In production, you would call OpenAI API here
-    const mockSpinAnalysis: SpinAnalysis = {
-      situation: {
-        score: Math.floor(Math.random() * 30) + 70, // 70-100
-        feedback: "Boa identificação da situação atual do cliente. Continue explorando o contexto organizacional para entender melhor o cenário completo.",
-        excerpts: [
-          "Entendo que vocês estão buscando melhorar o processo de vendas",
-          "Qual é a estrutura atual da equipe comercial?"
-        ]
-      },
-      problem: {
-        score: Math.floor(Math.random() * 40) + 60, // 60-100
-        feedback: "Identificou problemas relevantes, mas poderia aprofundar mais nas dores específicas e quantificar o impacto.",
-        excerpts: [
-          "temos enfrentado dificuldades com taxas de conversão",
-          "O processo atual é muito manual e demorado"
-        ]
-      },
-      implication: {
-        score: Math.floor(Math.random() * 50) + 50, // 50-100
-        feedback: "Explorou algumas implicações, mas poderia conectar melhor os problemas aos impactos financeiros e estratégicos do negócio.",
-        excerpts: [
-          "isso deve estar impactando o crescimento da empresa",
-          "Como isso afeta a produtividade da equipe?"
-        ]
-      },
-      need_payoff: {
-        score: Math.floor(Math.random() * 35) + 65, // 65-100
-        feedback: "Boa apresentação dos benefícios. Continue focando em como a solução resolve especificamente os problemas identificados.",
-        excerpts: [
-          "Nossa solução pode aumentar a conversão em até 40%",
-          "Isso resolveria exatamente o problema que vocês têm"
-        ]
+      O objeto JSON de saída DEVE ter EXATAMENTE a seguinte estrutura:
+      {
+        "spinAnalysis": {
+          "situation": { "score": number, "feedback": string, "excerpts": string[] },
+          "problem": { "score": number, "feedback": string, "excerpts": string[] },
+          "implication": { "score": number, "feedback": string, "excerpts": string[] },
+          "need_payoff": { "score": number, "feedback": string, "excerpts": string[] }
+        },
+        "playbookAnalysis": {
+          "adherence_score": number,
+          "feedback": { "rule": string, "followed": boolean, "details": string }[]
+        }
       }
-    }
+    `;
 
-    // Save SPIN analysis to database
-    const { error: updateError } = await supabaseClient
-      .from('call_analyses')
-      .update({ spin_analysis: mockSpinAnalysis })
-      .eq('call_id', callId)
+    console.log('Iniciando análise com GPT-4o-mini...');
+    const chatCompletion = await openai.createChatCompletion({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: analysisPrompt }],
+      response_format: { type: 'json_object' },
+    });
 
-    if (updateError) {
-      throw updateError
-    }
+    const analysisResult = JSON.parse(chatCompletion.choices[0].message.content || '{}');
+    console.log('Análise concluída.');
 
-    return new Response(
-      JSON.stringify({ success: true, spinAnalysis: mockSpinAnalysis }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    // Adiciona a transcrição completa ao resultado final para ser salva
+    analysisResult.full_transcript = transcript;
+
+    return new Response(JSON.stringify(analysisResult), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
 
   } catch (error) {
-    console.error('Error in analyze-spin function:', error)
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    console.error('Erro na função analyze-spin:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
-})
+});

@@ -1,10 +1,11 @@
 // src/pages/Goals.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { baserowService, AppUserObject, GoalData } from '../lib/baserowService';
-import { Plus, Loader2, Target, Calendar } from 'lucide-react';
+import { baserowService, AppUserObject, GoalData, FIELD_IDS } from '../lib/baserowService';
+import { Plus, Loader2, Target } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { GoalCard } from '../components/Dashboard/Goals/GoalCard'; // Importamos o GoalCard
+import { GoalCard } from '../components/Dashboard/Goals/GoalCard';
+import { GoalModal } from '../components/Goals/GoalModal'; // CAMINHO CORRIGIDO
 
 const initialFormState = {
   name: '',
@@ -22,8 +23,12 @@ export function Goals() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [metricOptions, setMetricOptions] = useState<{id: number, value: string}[]>([]); // Estado para as opções de métrica
-
+  const [metricOptions, setMetricOptions] = useState<{id: number, value: string}[]>([]);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'edit' | 'delete'>('edit');
+  const [selectedGoal, setSelectedGoal] = useState<GoalData | null>(null);
+  
   const fetchGoalsData = useCallback(async () => {
     if (!user?.organizationId) return;
     setLoading(true);
@@ -31,37 +36,32 @@ export function Goals() {
       const [goalsData, sdrsData, metricsData] = await Promise.all([
         baserowService.getGoals(user.organizationId),
         baserowService.getAllSDRs(user.organizationId),
-        baserowService.getMetricOptions(), // Buscamos as opções de métrica
+        baserowService.getMetricOptions(),
       ]);
       setGoals(goalsData);
       setSdrs(sdrsData);
       setMetricOptions(metricsData);
-      if (metricsData.length > 0) {
-        setForm(prev => ({...prev, metric: metricsData[0].value})); // Pré-seleciona a primeira métrica
+      if (metricsData.length > 0 && !form.metric) {
+        setForm(prev => ({...prev, metric: metricsData[0].value}));
       }
     } catch (error) {
-      console.error("Erro ao buscar dados de metas:", error);
       toast.error("Não foi possível carregar os dados de metas.");
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, form.metric]);
 
   useEffect(() => {
     fetchGoalsData();
   }, [fetchGoalsData]);
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.organizationId || !form.metric) {
-        toast.error("Por favor, selecione uma métrica válida.");
-        return;
-    };
+    if (!user?.organizationId || !form.metric) return;
     setIsSubmitting(true);
     try {
       await baserowService.createGoal({
@@ -73,96 +73,105 @@ export function Goals() {
       setForm(initialFormState);
       fetchGoalsData();
     } catch (error: any) {
-      console.error("Erro ao criar meta:", error);
       toast.error(error.message || "Não foi possível criar a meta.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // NOVA FUNÇÃO PARA EXCLUIR
-  const handleDeleteGoal = async (goalId: number, goalName: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir a meta "${goalName}"?`)) {
-      try {
-        await baserowService.deleteGoal(goalId);
-        toast.success(`Meta "${goalName}" excluída com sucesso!`);
-        fetchGoalsData(); // Atualiza a lista
-      } catch (error) {
-        toast.error("Não foi possível excluir a meta.");
-      }
-    }
+  const handleDeleteClick = (goal: GoalData) => {
+    setSelectedGoal(goal);
+    setModalMode('delete');
+    setIsModalOpen(true);
   };
 
-  // NOVA FUNÇÃO PARA EDITAR (usando prompt para simplicidade)
-  const handleEditGoal = async (goal: GoalData) => {
-    const newTargetValue = prompt(`Editar valor alvo para a meta "${goal.name}":`, goal.targetValue.toString());
-    if (newTargetValue && !isNaN(Number(newTargetValue))) {
-      try {
-        await baserowService.updateGoal(goal.id, {
-          // O nome do campo no Baserow é field_xxxxx
-          [FIELD_IDS.goals.targetValue]: Number(newTargetValue),
-        });
-        toast.success(`Meta "${goal.name}" atualizada com sucesso!`);
+  const handleEditClick = (goal: GoalData) => {
+    setSelectedGoal(goal);
+    setModalMode('edit');
+    setIsModalOpen(true);
+  };
+
+  const handleModalConfirm = async (mode: 'edit' | 'delete', data?: any) => {
+    if (!selectedGoal) return;
+    setIsSubmitting(true);
+    
+    try {
+        if (mode === 'delete') {
+            await baserowService.deleteGoal(selectedGoal.id);
+            toast.success(`Meta "${selectedGoal.name}" excluída com sucesso!`);
+        } else if (mode === 'edit' && data) {
+            const dataToUpdate: any = {
+              [FIELD_IDS.goals.name]: data.name,
+              [FIELD_IDS.goals.targetValue]: Number(data.targetValue),
+              [FIELD_IDS.goals.assignedTo]: data.sdrId === 'team' ? [] : [parseInt(data.sdrId)],
+            };
+            await baserowService.updateGoal(selectedGoal.id, dataToUpdate);
+            toast.success(`Meta "${selectedGoal.name}" atualizada com sucesso!`);
+        }
+    } catch (error) {
+        toast.error(`Não foi possível ${mode === 'delete' ? 'excluir' : 'atualizar'} a meta.`);
+    } finally {
+        setIsSubmitting(false);
+        setIsModalOpen(false);
+        setSelectedGoal(null);
         fetchGoalsData();
-      } catch (error) {
-        toast.error("Não foi possível atualizar a meta.");
-      }
     }
   };
 
-
-  if (loading) {
-    return <div className="p-8 text-center text-text-secondary">A carregar metas...</div>;
-  }
+  if (loading) return <div className="p-8 text-center">A carregar metas...</div>;
 
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-text-primary">Central de Metas</h1>
-        <p className="text-text-secondary mt-1">Defina e acompanhe os objetivos da sua equipe e individuais.</p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-            <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
-                <h3 className="text-xl font-bold text-text-primary mb-6">Metas Ativas</h3>
-                <div className="space-y-4">
-                    {goals.length > 0 ? (
-                        // RENDERIZAÇÃO ATUALIZADA USANDO GoalCard
-                        goals.map(goal => (
-                            <GoalCard 
-                                key={goal.id} 
-                                goal={goal} 
-                                onEdit={handleEditGoal}
-                                onDelete={handleDeleteGoal}
-                            />
-                        ))
-                    ) : (
-                        <div className="text-center py-10 text-text-secondary">
-                            <Target className="w-10 h-10 mx-auto mb-4" />
-                            <p>Nenhuma meta ativa encontrada.</p>
-                        </div>
-                    )}
-                </div>
-            </div>
+    <>
+      <GoalModal 
+        isOpen={isModalOpen}
+        mode={modalMode}
+        goal={selectedGoal}
+        sdrs={sdrs}
+        onClose={() => setIsModalOpen(false)}
+        onConfirm={handleModalConfirm}
+        isSubmitting={isSubmitting}
+      />
+      <div className="p-8 space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold text-text-primary">Central de Metas</h1>
+          <p className="text-text-secondary mt-1">Defina e acompanhe os objetivos da sua equipe e individuais.</p>
         </div>
 
-        <div className="lg:col-span-1 bg-surface p-8 rounded-2xl shadow-lg border border-gray-100 h-fit">
-            <h3 className="text-xl font-bold text-text-primary mb-6">Criar Nova Meta</h3>
-            <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+              <div className="bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
+                  <h3 className="text-xl font-bold text-text-primary mb-6">Metas Ativas</h3>
+                  <div className="space-y-4">
+                      {goals.length > 0 ? (
+                          goals.map(goal => (
+                              <GoalCard 
+                                  key={goal.id} 
+                                  goal={goal} 
+                                  onEdit={handleEditClick}
+                                  onDelete={handleDeleteClick}
+                              />
+                          ))
+                      ) : (
+                          <div className="text-center py-10 text-text-secondary">
+                              <Target className="w-10 h-10 mx-auto mb-4" />
+                              <p>Nenhuma meta ativa encontrada.</p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+          <div className="lg:col-span-1 bg-surface p-8 rounded-2xl shadow-lg border border-gray-100 h-fit">
+              <h3 className="text-xl font-bold text-text-primary mb-6">Criar Nova Meta</h3>
+              <form onSubmit={handleSubmit} className="space-y-6">
                 <div>
                     <label htmlFor="name" className="block text-sm font-medium text-text-primary mb-1">Nome da Meta</label>
                     <input id="name" name="name" type="text" value={form.name} onChange={handleFormChange} placeholder="Ex: Agendamentos de Agosto" required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
                 </div>
                 <div>
                     <label htmlFor="metric" className="block text-sm font-medium text-text-primary mb-1">Métrica</label>
-                    {/* CAMPO DE MÉTRICA ATUALIZADO PARA DROPDOWN */}
                     <select
-                        id="metric"
-                        name="metric"
-                        value={form.metric}
-                        onChange={handleFormChange}
-                        required
+                        id="metric" name="metric" value={form.metric}
+                        onChange={handleFormChange} required
                         className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                         <option value="" disabled>Selecione uma métrica</option>
@@ -194,9 +203,10 @@ export function Goals() {
                     {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
                     <span>{isSubmitting ? 'A criar...' : 'Criar Meta'}</span>
                 </button>
-            </form>
+              </form>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
