@@ -1,19 +1,13 @@
 // src/pages/TeamManagement.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { baserowService } from '../lib/baserowService';
-import { Mail, Plus, Loader2 } from 'lucide-react';
+import { baserowService, AppUserObject } from '../lib/baserowService';
+import { Mail, Plus, Loader2, Edit, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-interface TeamMember {
-  id: number;
-  name: string;
-  email: string;
-}
 
 export function TeamManagement() {
   const { user, loading: authLoading } = useAuth();
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [teamMembers, setTeamMembers] = useState<AppUserObject[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -67,6 +61,35 @@ export function TeamManagement() {
     }
   };
 
+  const handleDelete = async (memberId: number, memberName: string) => {
+    if (window.confirm(`Tem a certeza que deseja excluir ${memberName}? Esta ação não pode ser desfeita.`)) {
+      try {
+        await baserowService.deleteSDR(memberId);
+        toast.success(`${memberName} foi excluído com sucesso.`);
+        fetchTeamData();
+      } catch (error) {
+        console.error("Erro ao excluir membro:", error);
+        toast.error("Não foi possível excluir o membro.");
+      }
+    }
+  };
+
+  const handleEdit = (member: AppUserObject) => {
+    const newName = prompt("Digite o novo nome para:", member.name);
+    if (newName && newName.trim() !== '' && newName !== member.name) {
+      toast.promise(
+        baserowService.updateSDR(member.id, { name: newName }).then(() => {
+          fetchTeamData();
+        }),
+        {
+          loading: 'A atualizar...',
+          success: 'Nome atualizado com sucesso!',
+          error: 'Não foi possível atualizar o nome.',
+        }
+      );
+    }
+  };
+
   if (authLoading || loadingData) {
     return <div className="p-8 text-center text-text-secondary">A carregar equipe...</div>;
   }
@@ -115,6 +138,14 @@ export function TeamManagement() {
                 <div>
                   <p className="font-semibold text-text-primary">{member.name}</p>
                   <p className="text-sm text-text-secondary flex items-center gap-2"><Mail className="w-4 h-4" />{member.email}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleEdit(member)} className="p-2 text-text-secondary hover:text-primary transition-colors">
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDelete(member.id, member.name)} className="p-2 text-text-secondary hover:text-red-500 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             ))

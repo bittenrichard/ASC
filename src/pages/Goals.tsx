@@ -1,209 +1,302 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAuth } from '../hooks/useAuth';
-import { baserowService, BaserowGoal } from '../lib/baserowService';
-import { Plus, Target, Calendar, BarChart3, Loader2 } from 'lucide-react';
+// src/lib/baserowService.ts
+import bcrypt from 'bcryptjs';
 import toast from 'react-hot-toast';
 
-interface GoalForm {
-    name: string;
-    metric: string;
-    targetValue: number;
-    startDate: string;
-    endDate: string;
-    assignedTo: number[];
+// --- Interfaces ---
+export interface BaserowObject { id: number; [key: string]: any; }
+export interface AppUserObject { id: number; name: string; email: string; }
+export interface BaserowCallRecording extends BaserowObject {}
+export interface BaserowCallAnalysis extends BaserowObject {}
+export interface BaserowUser extends BaserowObject {}
+export interface BaserowOrganization extends BaserowObject {}
+export interface BaserowGoal extends BaserowObject {
+  [FIELD_IDS.goals.name]: string;
+  [FIELD_IDS.goals.metric]: string;
+  [FIELD_IDS.goals.startDate]: string;
+  [FIELD_IDS.goals.endDate]: string;
+  [FIELD_IDS.goals.targetValue]: number;
+  [FIELD_IDS.goals.assignedTo]: { id: number, value: string }[];
+}
+export interface GoalData {
+  id: number;
+  name: string;
+  metric: string;
+  targetValue: number;
+  currentValue: number;
+  startDate: string;
+  endDate: string;
+  sdrName?: string;
+  sdrId?: number;
+}
+export interface SpinAnalysisData {
+  situation: { score: number; feedback: string; excerpts: string[] };
+  problem: { score: number; feedback: string; excerpts: string[] };
+  implication: { score: number; feedback: string; excerpts: string[] };
+  need_payoff: { score: number; feedback: string; excerpts: string[] };
 }
 
-export function Goals() {
-    const { user, loading: authLoading } = useAuth();
-    const [goals, setGoals] = useState<BaserowGoal[]>([]);
-    const [loadingData, setLoadingData] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [teamMembers, setTeamMembers] = useState<any[]>([]);
+// --- Configuração da API ---
+const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
+const API_TOKEN = import.meta.env.VITE_BASEROW_API_TOKEN;
+const TABLE_IDS = {
+  users: '698',
+  organizations: '696',
+  callRecordings: '700',
+  analyses: '701',
+  goals: '702',
+};
+const FIELD_IDS = {
+  users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
+  organizations: { name: 'field_6746', owner: 'field_6761' },
+  callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
+  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6776', spinAnalysis: 'field_6793' },
+  goals: { 
+    name: 'field_6783',
+    metric: 'field_6784',
+    startDate: 'field_6785',
+    endDate: 'field_6786',
+    targetValue: 'field_6787',
+    assignedTo: 'field_6788',
+    organization: 'field_6790'
+  },
+};
+const ROLE_OPTION_IDS = {
+    administrator: 2994,
+    sdr: 2995,
+};
+const headers = { 'Authorization': `Token ${API_TOKEN}`, 'Content-Type': 'application/json' };
 
-    const [form, setForm] = useState<GoalForm>({
-        name: '',
-        metric: 'Número de Chamadas',
-        targetValue: 0,
-        startDate: '',
-        endDate: '',
-        assignedTo: [],
+// --- Funções Genéricas da API ---
+async function apiCall(url: string, options: RequestInit) {
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error(`ERRO DETALHADO NA API [${options.method} ${url}]:`, errorBody);
+            throw new Error(`Falha na API: ${response.statusText}`);
+        }
+        const text = await response.text();
+        return text ? JSON.parse(text) : {};
+    } catch (error) {
+        toast.error("Erro de comunicação com o servidor.");
+        throw error;
+    }
+}
+async function getRow<T>(tableId: string, rowId: number): Promise<T> {
+  return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=false`, { method: 'GET', headers });
+}
+async function createRow<T>(tableId: string, rowData: any): Promise<T> {
+  return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/?user_field_names=false`, { method: 'POST', headers, body: JSON.stringify(rowData) });
+}
+async function listRows<T>(tableId: string, filters: { [key: string]: any } = {}): Promise<T[]> {
+  const url = new URL(`${BASE_URL}/api/database/rows/table/${tableId}/?user_field_names=false`);
+  url.searchParams.append('filter_type', 'AND');
+  const linkRowFieldIds = [
+    FIELD_IDS.users.organization, FIELD_IDS.organizations.owner, FIELD_IDS.callRecordings.sdr,
+    FIELD_IDS.callRecordings.organization, FIELD_IDS.analyses.callRecording, 
+    FIELD_IDS.goals.assignedTo, FIELD_IDS.goals.organization
+  ];
+  Object.entries(filters).forEach(([fieldId, value]) => {
+      if (tableId === TABLE_IDS.analyses && fieldId === FIELD_IDS.analyses.organization) return;
+      
+      const isLinkField = linkRowFieldIds.includes(fieldId);
+      const filterOperator = isLinkField ? 'link_row_has' : 'equal';
+      if (value !== null && value !== undefined) {
+        url.searchParams.append(`filter__${fieldId}__${filterOperator}`, value.toString());
+      }
+  });
+  const data = await apiCall(url.toString(), { method: 'GET', headers });
+  return data.results as T[];
+}
+async function updateRow(tableId: string, rowId: number, rowData: any): Promise<any> {
+  return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=false`, { method: 'PATCH', headers, body: JSON.stringify(rowData) });
+}
+async function deleteRow(tableId: string, rowId: number): Promise<void> {
+  await apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/`, { method: 'DELETE', headers });
+}
+
+// --- Funções de Mapeamento ---
+function mapFromBaserow(rawUser: BaserowObject): AppUserObject {
+    return { id: rawUser.id, name: rawUser[FIELD_IDS.users.name], email: rawUser[FIELD_IDS.users.email] };
+}
+function mapGoalFromBaserow(rawGoal: BaserowGoal): GoalData {
+    const assignedSdr = rawGoal[FIELD_IDS.goals.assignedTo]?.[0];
+    return {
+        id: rawGoal.id,
+        name: rawGoal[FIELD_IDS.goals.name],
+        metric: rawGoal[FIELD_IDS.goals.metric],
+        startDate: rawGoal[FIELD_IDS.goals.startDate],
+        endDate: rawGoal[FIELD_IDS.goals.endDate],
+        targetValue: rawGoal[FIELD_IDS.goals.targetValue],
+        sdrName: assignedSdr ? assignedSdr.value : 'Equipe Inteira',
+        sdrId: assignedSdr ? assignedSdr.id : undefined,
+        currentValue: 0,
+    };
+}
+
+// --- Serviço Principal ---
+export const baserowService = {
+  async signIn(email: string, password: string) {
+    const users = await listRows<BaserowObject>(TABLE_IDS.users, { [FIELD_IDS.users.email]: email });
+    const user = users[0];
+    if (!user) return { user: null, error: { message: 'Email ou senha incorretos.' } };
+    const passwordHash = user[FIELD_IDS.users.passwordHash] as string;
+    if (!passwordHash) return { user: null, error: { message: 'Conta corrompida.' } };
+    const isPasswordCorrect = await bcrypt.compare(password, passwordHash);
+    if (isPasswordCorrect) {
+      const org = (user[FIELD_IDS.users.organization] as any[])?.[0];
+      const roleObject = user[FIELD_IDS.users.appRole] as { id: number, value: string };
+      if (!org || !roleObject) return { user: null, error: { message: 'Configuração de conta incompleta.' } };
+      const roleId = roleObject.id;
+      const appUser = {
+        id: user.id,
+        email: user[FIELD_IDS.users.email] as string,
+        name: user[FIELD_IDS.users.name] as string,
+        role: roleId === ROLE_OPTION_IDS.administrator ? 'administrator' : 'sdr',
+        organizationId: org.id as number,
+      };
+      localStorage.setItem('appUser', JSON.stringify(appUser));
+      return { user: appUser, error: null };
+    } else {
+      return { user: null, error: { message: 'Email ou senha incorretos.' } };
+    }
+  },
+
+  async createSDR(data: { name: string; email: string; password: string; organizationId: number; }) {
+    const existingUsers = await listRows(TABLE_IDS.users, { [FIELD_IDS.users.email]: data.email });
+    if (existingUsers.length > 0) throw new Error(`O email '${data.email}' já está registado no sistema.`);
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const newSdrRow = {
+        [FIELD_IDS.users.name]: data.name, [FIELD_IDS.users.email]: data.email,
+        [FIELD_IDS.users.passwordHash]: passwordHash, [FIELD_IDS.users.appRole]: ROLE_OPTION_IDS.sdr,
+        [FIELD_IDS.users.organization]: [data.organizationId],
+    };
+    await createRow(TABLE_IDS.users, newSdrRow);
+  },
+
+  async getAllSDRs(organizationId: number): Promise<AppUserObject[]> {
+    const rawSDRs = await listRows<BaserowObject>(TABLE_IDS.users, { [FIELD_IDS.users.organization]: organizationId });
+    const filtered = rawSDRs.filter(u => (u[FIELD_IDS.users.appRole] as {id: number})?.id === ROLE_OPTION_IDS.sdr);
+    return filtered.map(mapFromBaserow);
+  },
+  
+  deleteSDR: (sdrId: number) => deleteRow(TABLE_IDS.users, sdrId),
+
+  updateSDR: (sdrId: number, data: { name?: string; email?: string }) => {
+    const rowData: { [key: string]: any } = {};
+    if (data.name) rowData[FIELD_IDS.users.name] = data.name;
+    if (data.email) rowData[FIELD_IDS.users.email] = data.email;
+    return updateRow(TABLE_IDS.users, sdrId, rowData);
+  },
+  
+  getCallRecordings: (organizationId: number) => listRows<BaserowCallRecording>(TABLE_IDS.callRecordings, { [FIELD_IDS.callRecordings.organization]: organizationId }),
+  
+  async getCallAnalyses(organizationId: number): Promise<BaserowCallAnalysis[]> {
+    const allAnalyses = await listRows<BaserowCallAnalysis>(TABLE_IDS.analyses);
+    return allAnalyses.filter(analysis => {
+        const orgLink = (analysis[FIELD_IDS.analyses.organization] as any[])?.[0];
+        return orgLink?.id === organizationId;
+    });
+  },
+  
+  getCallRecordingById: (recordingId: number) => getRow<BaserowCallRecording>(TABLE_IDS.callRecordings, recordingId),
+  getAnalysisByRecordingId: (recordingId: number) => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses, { [FIELD_IDS.analyses.callRecording]: recordingId }).then(res => res[0] || null),
+  getSDRById: (sdrId: number) => getRow<BaserowUser>(TABLE_IDS.users, sdrId),
+  updateManagerFeedback: (analysisId: number, feedback: string) => updateRow(TABLE_IDS.analyses, analysisId, { [FIELD_IDS.analyses.managerFeedback]: feedback }),
+  
+  async signUpAdmin(data: { name: string; email: string; password: string; companyName: string }) {
+    const existingUsers = await listRows(TABLE_IDS.users, { [FIELD_IDS.users.email]: data.email });
+    if (existingUsers.length > 0) throw new Error("Este endereço de email já está em uso.");
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const newUserRow = {
+        [FIELD_IDS.users.name]: data.name, [FIELD_IDS.users.email]: data.email,
+        [FIELD_IDS.users.passwordHash]: passwordHash, [FIELD_IDS.users.appRole]: ROLE_OPTION_IDS.administrator,
+    };
+    const newUser = await createRow<BaserowObject>(TABLE_IDS.users, newUserRow);
+    const newOrgRow = { [FIELD_IDS.organizations.name]: data.companyName, [FIELD_IDS.organizations.owner]: [newUser.id] };
+    const newOrg = await createRow<BaserowObject>(TABLE_IDS.organizations, newOrgRow);
+    await updateRow(TABLE_IDS.users, newUser.id, { [FIELD_IDS.users.organization]: [newOrg.id] });
+  },
+
+  createGoal: (data: any) => createRow<BaserowGoal>(TABLE_IDS.goals, {
+      [FIELD_IDS.goals.name]: data.name,
+      [FIELD_IDS.goals.metric]: data.metric,
+      [FIELD_IDS.goals.startDate]: data.startDate,
+      [FIELD_IDS.goals.endDate]: data.endDate,
+      [FIELD_IDS.goals.targetValue]: data.targetValue,
+      [FIELD_IDS.goals.organization]: [data.organizationId],
+      ...(data.sdrId !== 'team' && { [FIELD_IDS.goals.assignedTo]: [Number(data.sdrId)] }),
+  }),
+  
+  updateGoal: (goalId: number, data: any) => updateRow(TABLE_IDS.goals, goalId, {
+      [FIELD_IDS.goals.name]: data.name,
+      [FIELD_IDS.goals.metric]: data.metric,
+      [FIELD_IDS.goals.startDate]: data.startDate,
+      [FIELD_IDS.goals.endDate]: data.endDate,
+      [FIELD_IDS.goals.targetValue]: data.targetValue,
+      ...(data.sdrId !== 'team' && { [FIELD_IDS.goals.assignedTo]: [Number(data.sdrId)] }),
+      ...(data.sdrId === 'team' && { [FIELD_IDS.goals.assignedTo]: [] }),
+  }),
+  
+  deleteGoal: (goalId: number) => deleteRow(TABLE_IDS.goals, goalId),
+
+  async getGoalsWithProgress(organizationId: number, startDate: string, endDate: string): Promise<GoalData[]> {
+    const allGoals = await listRows<BaserowGoal>(TABLE_IDS.goals, { [FIELD_IDS.goals.organization]: organizationId });
+    const recordings = await this.getCallRecordings(organizationId);
+    
+    // Filtra as metas que estão ativas no período selecionado pelo gestor
+    const relevantGoals = allGoals.filter(goal => {
+      const goalStart = new Date(goal[FIELD_IDS.goals.startDate]);
+      const goalEnd = new Date(goal[FIELD_IDS.goals.endDate]);
+      const viewStart = new Date(startDate);
+      const viewEnd = new Date(endDate);
+      return goalStart <= viewEnd && goalEnd >= viewStart;
     });
 
-    const metricOptions = ['Número de Chamadas', 'Reuniões Agendadas', 'Pontuação Média de Eficiência'];
+    const goalsWithProgress = relevantGoals.map(rawGoal => {
+      const goal = mapGoalFromBaserow(rawGoal);
+      
+      // Filtra as gravações que correspondem ao período e ao SDR da meta
+      const relevantRecordings = recordings.filter(rec => {
+        const callDate = new Date(rec[FIELD_IDS.callRecordings.callDate]);
+        const sdrId = (rec[FIELD_IDS.callRecordings.sdr] as any[])?.[0]?.id;
+        
+        const isDateInRange = callDate >= new Date(goal.startDate) && callDate <= new Date(goal.endDate);
+        const isSdrMatch = !goal.sdrId || goal.sdrId === sdrId;
+        
+        return isDateInRange && isSdrMatch;
+      });
 
-    const fetchGoalsAndTeam = useCallback(async () => {
-        if (!user || !user.organizationId) {
-            setLoadingData(false);
-            return;
-        }
-        setLoadingData(true);
-        try {
-            const fetchedGoals = await baserowService.getGoals(user.organizationId);
-            setGoals(fetchedGoals);
-            const fetchedTeam = await baserowService.getAllSDRs(user.organizationId);
-            setTeamMembers(fetchedTeam);
-        } catch (error) {
-            console.error('Erro ao buscar metas e equipe:', error);
-            toast.error('Não foi possível carregar as metas ou a equipe.');
-        } finally {
-            setLoadingData(false);
-        }
-    }, [user]);
+      // Lógica de cálculo (pode ser expandida)
+      if (goal.metric.toLowerCase().includes('chamadas')) {
+        goal.currentValue = relevantRecordings.length;
+      }
+      
+      return goal;
+    });
 
-    useEffect(() => {
-        if (!authLoading) {
-            fetchGoalsAndTeam();
-        }
-    }, [authLoading, fetchGoalsAndTeam]);
-
-    const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setForm(prev => ({ ...prev, [name]: value }));
-    };
-
-    const handleAssignedToChange = (sdrId: number) => {
-        setForm(prev => {
-            const isAssigned = prev.assignedTo.includes(sdrId);
-            if (isAssigned) {
-                return { ...prev, assignedTo: prev.assignedTo.filter(id => id !== sdrId) };
-            } else {
-                return { ...prev, assignedTo: [...prev.assignedTo, sdrId] };
+    return goalsWithProgress;
+  },
+  
+  async getLeaderboardData(organizationId: number) {
+    const [allSDRs, analyses] = await Promise.all([ this.getAllSDRs(organizationId), this.getCallAnalyses(organizationId) ]);
+    const sdrScores: { [sdrId: number]: { totalScore: number; callCount: number } } = {};
+    analyses.forEach(analysis => {
+        const callRecordingInfo = (analysis[FIELD_IDS.analyses.callRecording] as any[])?.[0];
+        if (callRecordingInfo) {
+            const sdrId = (callRecordingInfo[FIELD_IDS.callRecordings.sdr] as any[])?.[0]?.id;
+            if (sdrId) {
+                if (!sdrScores[sdrId]) sdrScores[sdrId] = { totalScore: 0, callCount: 0 };
+                sdrScores[sdrId].totalScore += analysis[FIELD_IDS.analyses.efficiencyScore] || 0;
+                sdrScores[sdrId].callCount += 1;
             }
-        });
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!user || !user.organizationId || isSubmitting) return;
-
-        setIsSubmitting(true);
-        try {
-            await baserowService.createGoal({
-                name: form.name,
-                metric: form.metric,
-                startDate: form.startDate,
-                endDate: form.endDate,
-                targetValue: form.targetValue,
-                assignedTo: form.assignedTo,
-                organizationId: user.organizationId,
-            });
-            toast.success('Meta criada com sucesso!');
-            setForm({ name: '', metric: 'Número de Chamadas', targetValue: 0, startDate: '', endDate: '', assignedTo: [] });
-            fetchGoalsAndTeam(); // Recarrega a lista de metas
-        } catch (error) {
-            console.error('Erro ao criar meta:', error);
-            toast.error('Falha ao criar meta.');
-        } finally {
-            setIsSubmitting(false);
         }
-    };
-    
-    if (authLoading || loadingData) {
-        return (
-            <div className="p-8 text-center text-text-secondary">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-                <p className="mt-4">A carregar dados...</p>
-            </div>
-        );
-    }
-    
-    if (user?.role !== 'administrator') {
-        return (
-            <div className="p-8 text-center">
-                <h2 className="text-2xl font-bold text-text-primary">Acesso Negado</h2>
-                <p className="text-text-secondary mt-2">Apenas administradores podem gerenciar metas.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="p-8 space-y-8">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-bold text-text-primary">Central de Metas</h1>
-                    <p className="text-text-secondary mt-1">Defina objetivos personalizados e acompanhe o progresso da sua equipe.</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-1 bg-surface p-8 rounded-2xl shadow-lg border border-gray-100 h-fit">
-                    <h3 className="text-xl font-bold text-text-primary mb-6">Criar Nova Meta</h3>
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-text-primary mb-1">Nome da Meta</label>
-                            <input id="name" type="text" name="name" value={form.name} onChange={handleFormChange} placeholder="Ex: Agendar 20 reuniões em Março" required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
-                        </div>
-                        <div>
-                            <label htmlFor="metric" className="block text-sm font-medium text-text-primary mb-1">Métrica</label>
-                            <select id="metric" name="metric" value={form.metric} onChange={handleFormChange} className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
-                                {metricOptions.map(option => <option key={option} value={option}>{option}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="targetValue" className="block text-sm font-medium text-text-primary mb-1">Valor Alvo</label>
-                            <input id="targetValue" type="number" name="targetValue" value={form.targetValue} onChange={handleFormChange} required min="0" className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="startDate" className="block text-sm font-medium text-text-primary mb-1">Data de Início</label>
-                                <input id="startDate" type="date" name="startDate" value={form.startDate} onChange={handleFormChange} required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
-                            </div>
-                            <div>
-                                <label htmlFor="endDate" className="block text-sm font-medium text-text-primary mb-1">Data de Fim</label>
-                                <input id="endDate" type="date" name="endDate" value={form.endDate} onChange={handleFormChange} required className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"/>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 className="text-sm font-medium text-text-primary mb-2">Atribuído a</h4>
-                            <div className="bg-background p-4 rounded-lg space-y-2 max-h-40 overflow-y-auto">
-                                <div className="flex items-center">
-                                  <input type="checkbox" id="allTeam" checked={form.assignedTo.length === teamMembers.length} onChange={() => setForm(prev => ({ ...prev, assignedTo: prev.assignedTo.length === teamMembers.length ? [] : teamMembers.map(m => m.id) }))} className="w-4 h-4 text-primary bg-background border-gray-300 rounded focus:ring-primary" />
-                                  <label htmlFor="allTeam" className="ml-2 text-sm font-semibold text-text-primary">Toda a Equipe</label>
-                                </div>
-                                {teamMembers.map(member => (
-                                    <div key={member.id} className="flex items-center">
-                                        <input type="checkbox" id={`sdr-${member.id}`} checked={form.assignedTo.includes(member.id)} onChange={() => handleAssignedToChange(member.id)} className="w-4 h-4 text-primary bg-background border-gray-300 rounded focus:ring-primary" />
-                                        <label htmlFor={`sdr-${member.id}`} className="ml-2 text-sm text-text-primary">{member.name}</label>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                        <button type="submit" disabled={isSubmitting} className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-lg shadow-sm text-base font-semibold text-white bg-primary hover:opacity-90 transition-all duration-300 disabled:opacity-50">
-                            {isSubmitting ? <Loader2 className="animate-spin h-5 w-5" /> : <Plus className="h-5 w-5" />}
-                            <span>{isSubmitting ? 'A criar meta...' : 'Criar Meta'}</span>
-                        </button>
-                    </form>
-                </div>
-
-                <div className="lg:col-span-2 bg-surface p-8 rounded-2xl shadow-lg border border-gray-100">
-                    <h3 className="text-xl font-bold text-text-primary mb-6">Metas Ativas</h3>
-                    <div className="space-y-4">
-                        {goals.length > 0 ? (
-                            goals.map(goal => (
-                                <div key={goal.id} className="bg-background p-5 rounded-lg border border-gray-200">
-                                    <div className="flex justify-between items-center mb-2">
-                                        <h4 className="font-semibold text-text-primary">{goal.Name}</h4>
-                                        <div className={`px-3 py-1 text-sm font-bold rounded-full ${new Date(goal.End_Date) < new Date() ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
-                                            {new Date(goal.End_Date) < new Date() ? 'Concluída' : 'Ativa'}
-                                        </div>
-                                    </div>
-                                    <p className="text-text-secondary text-sm mb-3">Métrica: {goal.Metric?.value}</p>
-                                    <div className="flex items-center space-x-4 text-text-secondary text-sm mb-3">
-                                        <span className="flex items-center gap-1"><Target className="w-4 h-4" /> Alvo: <span className="font-semibold text-text-primary">{goal.Target_Value}</span></span>
-                                        <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Período: <span className="font-semibold text-text-primary">{new Date(goal.Start_Date).toLocaleDateString('pt-BR')} - {new Date(goal.End_Date).toLocaleDateString('pt-BR')}</span></span>
-                                    </div>
-                                    <p className="text-sm text-text-secondary">Atribuída a: <span className="font-semibold text-text-primary">{goal.Assigned_To.map((s:any) => s.value).join(', ')}</span></p>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-center py-10 text-text-secondary">
-                                <Target className="w-10 h-10 mx-auto mb-4" />
-                                <p>Nenhuma meta ativa encontrada.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
+    });
+    const leaderboard = allSDRs.map(sdr => ({
+      sdr_id: sdr.id, name: sdr.name, email: sdr.email,
+      total_calls: sdrScores[sdr.id]?.callCount || 0,
+      avg_score: sdrScores[sdr.id] && sdrScores[sdr.id].callCount > 0 ? Math.round(sdrScores[sdr.id].totalScore / sdrScores[sdr.id].callCount) : 0,
+    }));
+    return leaderboard.sort((a, b) => b.avg_score - a.avg_score).map((sdr, index) => ({ ...sdr, rank: index + 1 }));
+  },
+};

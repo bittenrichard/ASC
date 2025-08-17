@@ -11,11 +11,21 @@ export interface BaserowUser extends BaserowObject {}
 export interface BaserowOrganization extends BaserowObject {}
 export interface BaserowGoal extends BaserowObject {
   [FIELD_IDS.goals.name]: string;
-  [FIELD_IDS.goals.metric]: { value: string };
+  [FIELD_IDS.goals.metric]: string;
   [FIELD_IDS.goals.startDate]: string;
   [FIELD_IDS.goals.endDate]: string;
   [FIELD_IDS.goals.targetValue]: number;
   [FIELD_IDS.goals.assignedTo]: { id: number, value: string }[];
+}
+export interface GoalData {
+  id: number;
+  name: string;
+  metric: string;
+  targetValue: number;
+  currentValue: number;
+  startDate: string;
+  endDate: string;
+  sdrName?: string;
 }
 export interface SpinAnalysisData {
   situation: { score: number; feedback: string; excerpts: string[] };
@@ -38,15 +48,15 @@ const FIELD_IDS = {
   users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
   organizations: { name: 'field_6746', owner: 'field_6761' },
   callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
-  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6778', spinAnalysis: 'field_6793' },
+  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6776', spinAnalysis: 'field_6793' },
   goals: { 
-    name: 'field_6783', // Nome da Meta
-    metric: 'field_6784', // Métrica
-    startDate: 'field_6785', // Data de Início
-    endDate: 'field_6786', // Data de Fim
-    targetValue: 'field_6787', // Valor Alvo
-    assignedTo: 'field_6788', // Atribuído a
-    organization: 'field_6790' // Organização
+    name: 'field_6783',
+    metric: 'field_6784',
+    startDate: 'field_6785',
+    endDate: 'field_6786',
+    targetValue: 'field_6787',
+    assignedTo: 'field_6788',
+    organization: 'field_6790'
   },
 };
 const ROLE_OPTION_IDS = {
@@ -82,10 +92,14 @@ async function listRows<T>(tableId: string, filters: { [key: string]: any } = {}
   url.searchParams.append('filter_type', 'AND');
   const linkRowFieldIds = [
     FIELD_IDS.users.organization, FIELD_IDS.organizations.owner, FIELD_IDS.callRecordings.sdr,
-    FIELD_IDS.callRecordings.organization, FIELD_IDS.analyses.callRecording, FIELD_IDS.analyses.organization,
+    FIELD_IDS.callRecordings.organization, FIELD_IDS.analyses.callRecording,
     FIELD_IDS.goals.assignedTo, FIELD_IDS.goals.organization
   ];
   Object.entries(filters).forEach(([fieldId, value]) => {
+      // Pula o filtro em campos Lookup, pois a API não suporta
+      if (fieldId === FIELD_IDS.analyses.organization) {
+        return;
+      }
       const isLinkField = linkRowFieldIds.includes(fieldId);
       const filterOperator = isLinkField ? 'link_row_has' : 'equal';
       if (value !== null && value !== undefined) {
@@ -98,10 +112,26 @@ async function listRows<T>(tableId: string, filters: { [key: string]: any } = {}
 async function updateRow(tableId: string, rowId: number, rowData: any): Promise<any> {
   return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=false`, { method: 'PATCH', headers, body: JSON.stringify(rowData) });
 }
+async function deleteRow(tableId: string, rowId: number): Promise<void> {
+  await apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/`, { method: 'DELETE', headers });
+}
 
 // --- Funções de Mapeamento ---
 function mapFromBaserow(rawUser: BaserowObject): AppUserObject {
     return { id: rawUser.id, name: rawUser[FIELD_IDS.users.name], email: rawUser[FIELD_IDS.users.email] };
+}
+function mapGoalFromBaserow(rawGoal: BaserowGoal): GoalData {
+    const assignedSdr = rawGoal[FIELD_IDS.goals.assignedTo]?.[0];
+    return {
+        id: rawGoal.id,
+        name: rawGoal[FIELD_IDS.goals.name],
+        metric: rawGoal[FIELD_IDS.goals.metric],
+        startDate: rawGoal[FIELD_IDS.goals.startDate],
+        endDate: rawGoal[FIELD_IDS.goals.endDate],
+        targetValue: rawGoal[FIELD_IDS.goals.targetValue],
+        sdrName: assignedSdr ? assignedSdr.value : undefined,
+        currentValue: 0,
+    };
 }
 
 // --- Serviço Principal ---
@@ -145,16 +175,31 @@ export const baserowService = {
   },
 
   async getAllSDRs(organizationId: number): Promise<AppUserObject[]> {
-    const rawSDRs = await listRows<BaserowObject>(TABLE_IDS.users, { 
-      [FIELD_IDS.users.organization]: organizationId
-    });
+    const rawSDRs = await listRows<BaserowObject>(TABLE_IDS.users, { [FIELD_IDS.users.organization]: organizationId });
     const filtered = rawSDRs.filter(u => (u[FIELD_IDS.users.appRole] as {id: number})?.id === ROLE_OPTION_IDS.sdr);
     return filtered.map(mapFromBaserow);
   },
+  
+  deleteSDR: (sdrId: number) => deleteRow(TABLE_IDS.users, sdrId),
 
-  // RESTAURAÇÃO DAS FUNÇÕES EM FALTA
+  updateSDR: (sdrId: number, data: { name?: string; email?: string }) => {
+    const rowData: { [key: string]: any } = {};
+    if (data.name) rowData[FIELD_IDS.users.name] = data.name;
+    if (data.email) rowData[FIELD_IDS.users.email] = data.email;
+    return updateRow(TABLE_IDS.users, sdrId, rowData);
+  },
+  
   getCallRecordings: (organizationId: number) => listRows<BaserowCallRecording>(TABLE_IDS.callRecordings, { [FIELD_IDS.callRecordings.organization]: organizationId }),
-  getCallAnalyses: () => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses),
+
+  async getCallAnalyses(organizationId: number): Promise<BaserowCallAnalysis[]> {
+    const allAnalyses = await listRows<BaserowCallAnalysis>(TABLE_IDS.analyses);
+    // Filtro manual para contornar a limitação da API em campos Lookup
+    return allAnalyses.filter(analysis => {
+        const orgLink = (analysis[FIELD_IDS.analyses.organization] as any[])?.[0];
+        return orgLink?.id === organizationId;
+    });
+  },
+
   getCallRecordingById: (recordingId: number) => getRow<BaserowCallRecording>(TABLE_IDS.callRecordings, recordingId),
   getAnalysisByRecordingId: (recordingId: number) => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses, { [FIELD_IDS.analyses.callRecording]: recordingId }).then(res => res[0] || null),
   getSDRById: (sdrId: number) => getRow<BaserowUser>(TABLE_IDS.users, sdrId),
@@ -174,71 +219,97 @@ export const baserowService = {
     await updateRow(TABLE_IDS.users, newUser.id, { [FIELD_IDS.users.organization]: [newOrg.id] });
   },
 
-  // --- Funções da nova API de Metas e Relatórios ---
-  async createGoal(data: { name: string; metric: string; startDate: string; endDate: string; targetValue: number; assignedTo: number[]; organizationId: number; }) {
+  async createGoal(data: { name: string; metric: string; startDate: string; endDate: string; targetValue: number; sdrId: string; organizationId: number; }) {
     const newGoalRow = {
       [FIELD_IDS.goals.name]: data.name,
-      [FIELD_IDS.goals.metric]: { value: data.metric },
+      [FIELD_IDS.goals.metric]: data.metric,
       [FIELD_IDS.goals.startDate]: data.startDate,
       [FIELD_IDS.goals.endDate]: data.endDate,
       [FIELD_IDS.goals.targetValue]: data.targetValue,
-      [FIELD_IDS.goals.assignedTo]: data.assignedTo,
       [FIELD_IDS.goals.organization]: [data.organizationId],
+      ...(data.sdrId !== 'team' && { [FIELD_IDS.goals.assignedTo]: [Number(data.sdrId)] }),
     };
     return createRow<BaserowGoal>(TABLE_IDS.goals, newGoalRow);
   },
 
-  async getGoals(organizationId: number): Promise<BaserowGoal[]> {
-    const filters: { [key: string]: any } = {
-      [FIELD_IDS.goals.organization]: organizationId,
-    };
-    return listRows<BaserowGoal>(TABLE_IDS.goals, filters);
+  async getGoals(organizationId: number): Promise<GoalData[]> {
+    const filters = { [FIELD_IDS.goals.organization]: organizationId };
+    const rawGoals = await listRows<BaserowGoal>(TABLE_IDS.goals, filters);
+    return rawGoals.map(mapGoalFromBaserow);
+  },
+
+  async getLeaderboardData(organizationId: number) {
+    const [allSDRs, analyses] = await Promise.all([
+      this.getAllSDRs(organizationId),
+      this.getCallAnalyses(organizationId)
+    ]);
+
+    const sdrScores: { [sdrId: number]: { totalScore: number; callCount: number } } = {};
+
+    analyses.forEach(analysis => {
+        const callRecordingInfo = (analysis[FIELD_IDS.analyses.callRecording] as any[])?.[0];
+        if (callRecordingInfo) {
+            const sdrId = (callRecordingInfo[FIELD_IDS.callRecordings.sdr] as any[])?.[0]?.id;
+            if (sdrId) {
+                if (!sdrScores[sdrId]) sdrScores[sdrId] = { totalScore: 0, callCount: 0 };
+                sdrScores[sdrId].totalScore += analysis[FIELD_IDS.analyses.efficiencyScore] || 0;
+                sdrScores[sdrId].callCount += 1;
+            }
+        }
+    });
+
+    const leaderboard = allSDRs.map(sdr => ({
+      sdr_id: sdr.id, name: sdr.name, email: sdr.email,
+      total_calls: sdrScores[sdr.id]?.callCount || 0,
+      avg_score: sdrScores[sdr.id] && sdrScores[sdr.id].callCount > 0 ? Math.round(sdrScores[sdr.id].totalScore / sdrScores[sdr.id].callCount) : 0,
+    }));
+
+    return leaderboard.sort((a, b) => b.avg_score - a.avg_score)
+                      .map((sdr, index) => ({ ...sdr, rank: index + 1 }));
   },
 
   async getTeamSpinScores(organizationId: number, startDate: string, endDate: string) {
-    const analyses = await baserowService.getCallAnalyses();
+    const analysesForOrg = await this.getCallAnalyses(organizationId);
+    const recordingsForOrg = await this.getCallRecordings(organizationId);
 
-    const filteredAnalyses = analyses.filter(a => {
-      const isFromOrg = a.Organization?.[0]?.id === organizationId;
-      const callRecordingLink = a.Call_Recording && a.Call_Recording.length > 0 ? a.Call_Recording[0] : null;
-      if (!isFromOrg || !callRecordingLink) return false;
+    const recordingsMap = new Map(recordingsForOrg.map(r => [r.id, r]));
 
-      const callDate = new Date(callRecordingLink.Call_Date);
+    const filteredAnalyses = analysesForOrg.filter(a => {
+      const callRecordingLink = (a[FIELD_IDS.analyses.callRecording] as any[])?.[0];
+      if (!callRecordingLink) return false;
+      const recording = recordingsMap.get(callRecordingLink.id);
+      if (!recording) return false;
+      
+      const callDate = new Date(recording[FIELD_IDS.callRecordings.callDate]);
       const start = new Date(startDate);
       const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
       
       return callDate >= start && callDate <= end;
     });
 
     if (filteredAnalyses.length === 0) {
-      return {
-        situation: 0, problem: 0, implication: 0, need_payoff: 0,
-      };
+      return { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
     }
-
-    const totalScores = {
-      situation: 0, problem: 0, implication: 0, need_payoff: 0,
-    };
-
+    const totalScores = { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
     filteredAnalyses.forEach(a => {
       if (a[FIELD_IDS.analyses.spinAnalysis]) {
         try {
           const spinData = JSON.parse(a[FIELD_IDS.analyses.spinAnalysis]);
-          totalScores.situation += spinData.situation.score;
-          totalScores.problem += spinData.problem.score;
-          totalScores.implication += spinData.implication.score;
-          totalScores.need_payoff += spinData.need_payoff.score;
+          totalScores.situation += spinData.situation.score || 0;
+          totalScores.problem += spinData.problem.score || 0;
+          totalScores.implication += spinData.implication.score || 0;
+          totalScores.need_payoff += spinData.need_payoff.score || 0;
         } catch (e) {
           console.error("Erro ao parsear a análise SPIN:", e);
         }
       }
     });
-
     return {
-      situation: totalScores.situation / filteredAnalyses.length,
-      problem: totalScores.problem / filteredAnalyses.length,
-      implication: totalScores.implication / filteredAnalyses.length,
-      need_payoff: totalScores.need_payoff / filteredAnalyses.length,
+      situation: Math.round(totalScores.situation / filteredAnalyses.length),
+      problem: Math.round(totalScores.problem / filteredAnalyses.length),
+      implication: Math.round(totalScores.implication / filteredAnalyses.length),
+      need_payoff: Math.round(totalScores.need_payoff / filteredAnalyses.length),
     };
   },
 };

@@ -1,4 +1,5 @@
 // src/components/Dashboard/KPIWidget.tsx
+
 import React from 'react';
 
 interface KPIItem {
@@ -24,6 +25,7 @@ export function KPIWidget({ title, data }: KPIWidgetProps) {
     <div className="bg-surface p-6 rounded-2xl shadow-lg border border-gray-100 h-full">
       <h3 className="text-lg font-bold text-text-primary mb-4">{title}</h3>
       <div className="space-y-4">
+        {/* O map para renderizar os itens continua igual, sem alterações */}
         {data.map((item, index) => (
           <div key={index}>
             <div className="flex justify-between items-center mb-1">
