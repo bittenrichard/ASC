@@ -10,7 +10,9 @@ import Calls from './pages/Calls';
 import { CallDetails } from './pages/CallDetails';
 import { Leaderboard } from './pages/Leaderboard';
 import { TeamManagement } from './pages/TeamManagement';
-import { Goals } from './pages/Goals'; // Importação corrigida
+import { Goals } from './pages/Goals';
+import { PlaybookPage } from './pages/Playbook'; // NOVA IMPORTAÇÃO
+import { CoachingHub } from './pages/CoachingHub'; // NOVA IMPORTAÇÃO
 
 const PrivateLayout = () => (
   <div className="flex h-screen bg-background">
@@ -52,6 +54,8 @@ function AppRoutes() {
                 <Route path="/leaderboard" element={<Leaderboard />} />
                 <Route path="/team" element={<TeamManagement />} />
                 <Route path="/goals" element={<Goals />} />
+                <Route path="/playbook" element={<PlaybookPage />} /> {/* NOVA ROTA */}
+                <Route path="/coaching" element={<CoachingHub />} /> {/* NOVA ROTA */}
               </>
             )}
           </Route>

@@ -1,7 +1,7 @@
 // src/components/Layout/Sidebar.tsx
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, Phone, Users, LogOut, Trophy, Target } from 'lucide-react';
+import { BarChart3, Phone, Users, LogOut, Trophy, Target, BookOpen } from 'lucide-react'; // Adicionado BookOpen
 import { useAuth } from '../../hooks/useAuth';
 
 export function Sidebar() {
@@ -15,10 +15,12 @@ export function Sidebar() {
 
   const adminNavItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { to: '/goals', icon: Target, label: 'Metas' }, // Novo item de navegação
+    { to: '/goals', icon: Target, label: 'Metas' },
+    { to: '/playbook', icon: BookOpen, label: 'Playbook' }, // NOVA ROTA
     { to: '/calls', icon: Phone, label: 'Chamadas' },
     { to: '/leaderboard', icon: Trophy, label: 'Ranking' },
     { to: '/team', icon: Users, label: 'Equipe' },
+    { to: '/coaching', icon: Users, label: 'Central de Coaching'}, // NOVA ROTA
   ];
 
   const sdrNavItems = [

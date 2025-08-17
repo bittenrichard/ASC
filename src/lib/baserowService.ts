@@ -34,6 +34,19 @@ export interface SpinAnalysisData {
   implication: { score: number; feedback: string; excerpts: string[] };
   need_payoff: { score: number; feedback: string; excerpts: string[] };
 }
+// NOVAS INTERFACES PARA PLAYBOOK
+export interface PlaybookRule {
+    id: number;
+    rule_type: { value: string };
+    keyword_trigger: string;
+    description: string;
+}
+export interface Playbook {
+    id: number;
+    name: string;
+    rules: PlaybookRule[];
+}
+
 
 // --- Configuração da API ---
 const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
@@ -45,9 +58,11 @@ const TABLE_IDS = {
   callRecordings: import.meta.env.VITE_BASEROW_TABLE_CALL_RECORDINGS,
   analyses: import.meta.env.VITE_BASEROW_TABLE_ANALYSES,
   goals: import.meta.env.VITE_BASEROW_TABLE_METAS,
+  playbooks: 'ID_DA_SUA_TABELA_PLAYBOOKS', // SUBSTITUA PELO ID REAL
+  playbookRules: 'ID_DA_SUA_TABELA_PLAYBOOK_RULES', // SUBSTITUA PELO ID REAL
 };
 
-const FIELD_IDS = {
+export const FIELD_IDS = { // Exportado para ser usado em outros arquivos
   users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
   organizations: { name: 'field_6746', owner: 'field_6761' },
   callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
@@ -61,6 +76,18 @@ const FIELD_IDS = {
     assignedTo: 'field_6788',
     organization: 'field_6790'
   },
+  // NOVOS FIELDS PARA PLAYBOOK (AJUSTE OS NÚMEROS CONFORME O SEU BASEROW)
+  playbooks: {
+    name: 'field_6795',
+    organization: 'field_6796',
+    rules: 'field_6802',
+  },
+  playbookRules: {
+    playbook: 'field_6799',
+    rule_type: 'field_6800',
+    keyword_trigger: 'field_6803',
+    description: 'field_6804',
+  }
 };
 const ROLE_OPTION_IDS = {
     administrator: 2994,
@@ -69,6 +96,7 @@ const ROLE_OPTION_IDS = {
 const headers = { 'Authorization': `Token ${API_TOKEN}`, 'Content-Type': 'application/json' };
 
 // --- Funções Genéricas da API ---
+// (apiCall, getRow, createRow, listAllRows, updateRow, deleteRow - sem alterações)
 async function apiCall(url: string, options: RequestInit) {
     try {
         const response = await fetch(url, options);
@@ -133,6 +161,7 @@ function mapGoalFromBaserow(rawGoal: BaserowGoal): GoalData {
 
 // --- Serviço Principal ---
 export const baserowService = {
+  // (signIn, createSDR, getAllSDRs, etc. - sem alterações)
   async signIn(email: string, password: string) {
     const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
     const user = allUsers.find(u => u[FIELD_IDS.users.email] === email);
@@ -279,7 +308,6 @@ export const baserowService = {
   updateGoal: (goalId: number, dataToUpdate: object) => updateRow(TABLE_IDS.goals, goalId, dataToUpdate),
   deleteGoal: (goalId: number) => deleteRow(TABLE_IDS.goals, goalId),
 
-  // FUNÇÃO RESTAURADA NO LOCAL CORRETO
   async getLeaderboardData(organizationId: number) {
     const [allSDRs, analyses] = await Promise.all([
       this.getAllSDRs(organizationId),
@@ -305,4 +333,42 @@ export const baserowService = {
     return leaderboard.sort((a, b) => b.avg_score - a.avg_score)
                       .map((sdr, index) => ({ ...sdr, rank: index + 1 }));
   },
+
+  // --- NOVAS FUNÇÕES PARA PLAYBOOKS ---
+
+  async getPlaybooksByOrg(organizationId: number): Promise<Playbook[]> {
+    const allPlaybooks = await listAllRows<Playbook>(TABLE_IDS.playbooks);
+    return allPlaybooks.filter(p => p[FIELD_IDS.playbooks.organization]?.[0]?.id === organizationId);
+  },
+
+  createPlaybook: (name: string, organizationId: number) => {
+    const rowData = {
+        [FIELD_IDS.playbooks.name]: name,
+        [FIELD_IDS.playbooks.organization]: [organizationId],
+    };
+    return createRow<Playbook>(TABLE_IDS.playbooks, rowData);
+  },
+  
+  deletePlaybook: (playbookId: number) => deleteRow(TABLE_IDS.playbooks, playbookId),
+
+  addPlaybookRule: (playbookId: number, rule: Omit<PlaybookRule, 'id'>) => {
+      const rowData = {
+          [FIELD_IDS.playbookRules.playbook]: [playbookId],
+          [FIELD_IDS.playbookRules.rule_type]: rule.rule_type.value,
+          [FIELD_IDS.playbookRules.keyword_trigger]: rule.keyword_trigger,
+          [FIELD_IDS.playbookRules.description]: rule.description,
+      };
+      return createRow(TABLE_IDS.playbookRules, rowData);
+  },
+
+  updatePlaybookRule: (ruleId: number, rule: Partial<Omit<PlaybookRule, 'id'>>) => {
+      const rowData: any = {};
+      if (rule.rule_type) rowData[FIELD_IDS.playbookRules.rule_type] = rule.rule_type.value;
+      if (rule.keyword_trigger) rowData[FIELD_IDS.playbookRules.keyword_trigger] = rule.keyword_trigger;
+      if (rule.description) rowData[FIELD_IDS.playbookRules.description] = rule.description;
+      return updateRow(TABLE_IDS.playbookRules, ruleId, rowData);
+  },
+  
+  deletePlaybookRule: (ruleId: number) => deleteRow(TABLE_IDS.playbookRules, ruleId),
+
 };
