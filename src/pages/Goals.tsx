@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { baserowService, AppUserObject, GoalData } from '../lib/baserowService';
 import { Plus, Loader2, Target, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { GoalCard } from '../components/Dashboard/Goals/GoalCard'; // Importamos o GoalCard
 
 const initialFormState = {
   name: '',
@@ -21,19 +22,23 @@ export function Goals() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const metricOptions = ['Número de Chamadas', 'Reuniões Agendadas', 'Pontuação Média de Eficiência'];
+  const [metricOptions, setMetricOptions] = useState<{id: number, value: string}[]>([]); // Estado para as opções de métrica
 
   const fetchGoalsData = useCallback(async () => {
     if (!user?.organizationId) return;
     setLoading(true);
     try {
-      const [goalsData, sdrsData] = await Promise.all([
+      const [goalsData, sdrsData, metricsData] = await Promise.all([
         baserowService.getGoals(user.organizationId),
-        baserowService.getAllSDRs(user.organizationId)
+        baserowService.getAllSDRs(user.organizationId),
+        baserowService.getMetricOptions(), // Buscamos as opções de métrica
       ]);
       setGoals(goalsData);
       setSdrs(sdrsData);
+      setMetricOptions(metricsData);
+      if (metricsData.length > 0) {
+        setForm(prev => ({...prev, metric: metricsData[0].value})); // Pré-seleciona a primeira métrica
+      }
     } catch (error) {
       console.error("Erro ao buscar dados de metas:", error);
       toast.error("Não foi possível carregar os dados de metas.");
@@ -53,7 +58,10 @@ export function Goals() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.organizationId) return;
+    if (!user?.organizationId || !form.metric) {
+        toast.error("Por favor, selecione uma métrica válida.");
+        return;
+    };
     setIsSubmitting(true);
     try {
       await baserowService.createGoal({
@@ -72,6 +80,37 @@ export function Goals() {
     }
   };
 
+  // NOVA FUNÇÃO PARA EXCLUIR
+  const handleDeleteGoal = async (goalId: number, goalName: string) => {
+    if (window.confirm(`Tem certeza que deseja excluir a meta "${goalName}"?`)) {
+      try {
+        await baserowService.deleteGoal(goalId);
+        toast.success(`Meta "${goalName}" excluída com sucesso!`);
+        fetchGoalsData(); // Atualiza a lista
+      } catch (error) {
+        toast.error("Não foi possível excluir a meta.");
+      }
+    }
+  };
+
+  // NOVA FUNÇÃO PARA EDITAR (usando prompt para simplicidade)
+  const handleEditGoal = async (goal: GoalData) => {
+    const newTargetValue = prompt(`Editar valor alvo para a meta "${goal.name}":`, goal.targetValue.toString());
+    if (newTargetValue && !isNaN(Number(newTargetValue))) {
+      try {
+        await baserowService.updateGoal(goal.id, {
+          // O nome do campo no Baserow é field_xxxxx
+          [FIELD_IDS.goals.targetValue]: Number(newTargetValue),
+        });
+        toast.success(`Meta "${goal.name}" atualizada com sucesso!`);
+        fetchGoalsData();
+      } catch (error) {
+        toast.error("Não foi possível atualizar a meta.");
+      }
+    }
+  };
+
+
   if (loading) {
     return <div className="p-8 text-center text-text-secondary">A carregar metas...</div>;
   }
@@ -89,21 +128,14 @@ export function Goals() {
                 <h3 className="text-xl font-bold text-text-primary mb-6">Metas Ativas</h3>
                 <div className="space-y-4">
                     {goals.length > 0 ? (
+                        // RENDERIZAÇÃO ATUALIZADA USANDO GoalCard
                         goals.map(goal => (
-                            <div key={goal.id} className="bg-background p-5 rounded-lg border border-gray-200">
-                                <div className="flex justify-between items-center mb-2">
-                                    <h4 className="font-semibold text-text-primary">{goal.name}</h4>
-                                    <div className={`px-3 py-1 text-sm font-bold rounded-full ${new Date(goal.endDate) < new Date() ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
-                                        {new Date(goal.endDate) < new Date() ? 'Concluída' : 'Ativa'}
-                                    </div>
-                                </div>
-                                <p className="text-text-secondary text-sm mb-3">Métrica: {goal.metric}</p>
-                                <div className="flex items-center space-x-4 text-text-secondary text-sm mb-3">
-                                    <span className="flex items-center gap-1"><Target className="w-4 h-4" /> Alvo: <span className="font-semibold text-text-primary">{goal.targetValue}</span></span>
-                                    <span className="flex items-center gap-1"><Calendar className="w-4 h-4" /> Período: <span className="font-semibold text-text-primary">{new Date(goal.startDate).toLocaleDateString('pt-BR')} - {new Date(goal.endDate).toLocaleDateString('pt-BR')}</span></span>
-                                </div>
-                                <p className="text-sm text-text-secondary">Atribuída a: <span className="font-semibold text-text-primary">{goal.sdrName || 'Equipe Inteira'}</span></p>
-                            </div>
+                            <GoalCard 
+                                key={goal.id} 
+                                goal={goal} 
+                                onEdit={handleEditGoal}
+                                onDelete={handleDeleteGoal}
+                            />
                         ))
                     ) : (
                         <div className="text-center py-10 text-text-secondary">
@@ -124,19 +156,18 @@ export function Goals() {
                 </div>
                 <div>
                     <label htmlFor="metric" className="block text-sm font-medium text-text-primary mb-1">Métrica</label>
-                    <input
-                        list="metric-options"
+                    {/* CAMPO DE MÉTRICA ATUALIZADO PARA DROPDOWN */}
+                    <select
                         id="metric"
                         name="metric"
                         value={form.metric}
                         onChange={handleFormChange}
-                        placeholder="Ex: Reuniões Agendadas"
                         required
                         className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                    <datalist id="metric-options">
-                        {metricOptions.map(option => <option key={option} value={option} />)}
-                    </datalist>
+                    >
+                        <option value="" disabled>Selecione uma métrica</option>
+                        {metricOptions.map(option => <option key={option.id} value={option.value}>{option.value}</option>)}
+                    </select>
                 </div>
                 <div>
                     <label htmlFor="targetValue" className="block text-sm font-medium text-text-primary mb-1">Valor Alvo</label>

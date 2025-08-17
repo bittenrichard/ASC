@@ -1,4 +1,4 @@
-// src/components/Goals/GoalCard.tsx
+// src/components/Dashboard/Goals/GoalCard.tsx
 import React from 'react';
 import { GoalData } from '../../lib/baserowService';
 import { Target, Calendar, Edit, Trash2 } from 'lucide-react';
@@ -41,7 +41,7 @@ export function GoalCard({ goal, onEdit, onDelete }: GoalCardProps) {
       </div>
       
       <div className="flex items-center space-x-4 text-text-secondary text-sm my-4">
-        <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /> Período: <span className="font-semibold text-text-primary">{new Date(goal.startDate).toLocaleDateString('pt-BR')} - {new Date(goal.endDate).toLocaleDateString('pt-BR')}</span></span>
+        <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" /> Período: <span className="font-semibold text-text-primary">{new Date(goal.startDate.replace(/-/g, '/')).toLocaleDateString('pt-BR')} - {new Date(goal.endDate.replace(/-/g, '/')).toLocaleDateString('pt-BR')}</span></span>
       </div>
 
       <div>

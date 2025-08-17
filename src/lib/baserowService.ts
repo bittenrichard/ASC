@@ -11,7 +11,7 @@ export interface BaserowUser extends BaserowObject {}
 export interface BaserowOrganization extends BaserowObject {}
 export interface BaserowGoal extends BaserowObject {
   [FIELD_IDS.goals.name]: string;
-  [FIELD_IDS.goals.metric]: string;
+  [FIELD_IDS.goals.metric]: { value: string };
   [FIELD_IDS.goals.startDate]: string;
   [FIELD_IDS.goals.endDate]: string;
   [FIELD_IDS.goals.targetValue]: number;
@@ -25,6 +25,7 @@ export interface GoalData {
   currentValue: number;
   startDate: string;
   endDate: string;
+  sdrId?: number;
   sdrName?: string;
 }
 export interface SpinAnalysisData {
@@ -37,19 +38,21 @@ export interface SpinAnalysisData {
 // --- Configuração da API ---
 const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
 const API_TOKEN = import.meta.env.VITE_BASEROW_API_TOKEN;
+
 const TABLE_IDS = {
-  users: '698',
-  organizations: '696',
-  callRecordings: '700',
-  analyses: '701',
-  goals: '702',
+  users: import.meta.env.VITE_BASEROW_TABLE_USERS,
+  organizations: import.meta.env.VITE_BASEROW_TABLE_ORGANIZATIONS,
+  callRecordings: import.meta.env.VITE_BASEROW_TABLE_CALL_RECORDINGS,
+  analyses: import.meta.env.VITE_BASEROW_TABLE_ANALYSES,
+  goals: import.meta.env.VITE_BASEROW_TABLE_METAS,
 };
+
 const FIELD_IDS = {
   users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
   organizations: { name: 'field_6746', owner: 'field_6761' },
   callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
   analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6776', spinAnalysis: 'field_6793' },
-  goals: { 
+  goals: {
     name: 'field_6783',
     metric: 'field_6784',
     startDate: 'field_6785',
@@ -69,46 +72,39 @@ const headers = { 'Authorization': `Token ${API_TOKEN}`, 'Content-Type': 'applic
 async function apiCall(url: string, options: RequestInit) {
     try {
         const response = await fetch(url, options);
-        if (!response.ok) {
-            const errorBody = await response.json();
-            console.error(`ERRO DETALHADO NA API [${options.method} ${url}]:`, errorBody);
-            throw new Error(`Falha na API: ${response.statusText}`);
-        }
         const text = await response.text();
+        if (!response.ok) {
+            let errorBody;
+            try {
+                errorBody = JSON.parse(text);
+                console.error(`ERRO DETALHADO NA API [${options.method} ${url}]:`, errorBody);
+            } catch (e) {
+                console.error(`ERRO 500 ou outro erro de servidor. Resposta recebida:`, text);
+                throw new Error(`Erro de Servidor: ${response.status} ${response.statusText}. Verifique o console para a resposta completa.`);
+            }
+            throw new Error(`Falha na API: ${errorBody.detail || response.statusText}`);
+        }
         return text ? JSON.parse(text) : {};
     } catch (error) {
-        toast.error("Erro de comunicação com o servidor.");
+        const errorMessage = error instanceof Error ? error.message : "Erro de comunicação com o servidor.";
+        toast.error(errorMessage);
         throw error;
     }
 }
+
 async function getRow<T>(tableId: string, rowId: number): Promise<T> {
   return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=false`, { method: 'GET', headers });
 }
 async function createRow<T>(tableId: string, rowData: any): Promise<T> {
   return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/?user_field_names=false`, { method: 'POST', headers, body: JSON.stringify(rowData) });
 }
-async function listRows<T>(tableId: string, filters: { [key: string]: any } = {}): Promise<T[]> {
-  const url = new URL(`${BASE_URL}/api/database/rows/table/${tableId}/?user_field_names=false`);
-  url.searchParams.append('filter_type', 'AND');
-  const linkRowFieldIds = [
-    FIELD_IDS.users.organization, FIELD_IDS.organizations.owner, FIELD_IDS.callRecordings.sdr,
-    FIELD_IDS.callRecordings.organization, FIELD_IDS.analyses.callRecording,
-    FIELD_IDS.goals.assignedTo, FIELD_IDS.goals.organization
-  ];
-  Object.entries(filters).forEach(([fieldId, value]) => {
-      // Pula o filtro em campos Lookup, pois a API não suporta
-      if (fieldId === FIELD_IDS.analyses.organization) {
-        return;
-      }
-      const isLinkField = linkRowFieldIds.includes(fieldId);
-      const filterOperator = isLinkField ? 'link_row_has' : 'equal';
-      if (value !== null && value !== undefined) {
-        url.searchParams.append(`filter__${fieldId}__${filterOperator}`, value.toString());
-      }
-  });
+
+async function listAllRows<T>(tableId: string): Promise<T[]> {
+  const url = new URL(`${BASE_URL}/api/database/rows/table/${tableId}/?user_field_names=false&size=200`);
   const data = await apiCall(url.toString(), { method: 'GET', headers });
   return data.results as T[];
 }
+
 async function updateRow(tableId: string, rowId: number, rowData: any): Promise<any> {
   return apiCall(`${BASE_URL}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=false`, { method: 'PATCH', headers, body: JSON.stringify(rowData) });
 }
@@ -125,11 +121,12 @@ function mapGoalFromBaserow(rawGoal: BaserowGoal): GoalData {
     return {
         id: rawGoal.id,
         name: rawGoal[FIELD_IDS.goals.name],
-        metric: rawGoal[FIELD_IDS.goals.metric],
+        metric: rawGoal[FIELD_IDS.goals.metric]?.value,
         startDate: rawGoal[FIELD_IDS.goals.startDate],
         endDate: rawGoal[FIELD_IDS.goals.endDate],
         targetValue: rawGoal[FIELD_IDS.goals.targetValue],
-        sdrName: assignedSdr ? assignedSdr.value : undefined,
+        sdrId: assignedSdr ? assignedSdr.id : undefined,
+        sdrName: assignedSdr ? assignedSdr.value : 'Equipe Inteira',
         currentValue: 0,
     };
 }
@@ -137,8 +134,9 @@ function mapGoalFromBaserow(rawGoal: BaserowGoal): GoalData {
 // --- Serviço Principal ---
 export const baserowService = {
   async signIn(email: string, password: string) {
-    const users = await listRows<BaserowObject>(TABLE_IDS.users, { [FIELD_IDS.users.email]: email });
-    const user = users[0];
+    const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
+    const user = allUsers.find(u => u[FIELD_IDS.users.email] === email);
+
     if (!user) return { user: null, error: { message: 'Email ou senha incorretos.' } };
     const passwordHash = user[FIELD_IDS.users.passwordHash] as string;
     if (!passwordHash) return { user: null, error: { message: 'Conta corrompida.' } };
@@ -163,8 +161,9 @@ export const baserowService = {
   },
 
   async createSDR(data: { name: string; email: string; password: string; organizationId: number; }) {
-    const existingUsers = await listRows(TABLE_IDS.users, { [FIELD_IDS.users.email]: data.email });
-    if (existingUsers.length > 0) throw new Error(`O email '${data.email}' já está registado no sistema.`);
+    const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
+    const existingUser = allUsers.find(u => u[FIELD_IDS.users.email] === data.email);
+    if (existingUser) throw new Error(`O email '${data.email}' já está registado no sistema.`);
     const passwordHash = await bcrypt.hash(data.password, 10);
     const newSdrRow = {
         [FIELD_IDS.users.name]: data.name, [FIELD_IDS.users.email]: data.email,
@@ -175,13 +174,16 @@ export const baserowService = {
   },
 
   async getAllSDRs(organizationId: number): Promise<AppUserObject[]> {
-    const rawSDRs = await listRows<BaserowObject>(TABLE_IDS.users, { [FIELD_IDS.users.organization]: organizationId });
-    const filtered = rawSDRs.filter(u => (u[FIELD_IDS.users.appRole] as {id: number})?.id === ROLE_OPTION_IDS.sdr);
-    return filtered.map(mapFromBaserow);
+    const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
+    const sdrsForOrg = allUsers.filter(user => {
+        const userOrg = (user[FIELD_IDS.users.organization] as any[])?.[0];
+        const userRole = (user[FIELD_IDS.users.appRole] as {id: number})?.id;
+        return userOrg?.id === organizationId && userRole === ROLE_OPTION_IDS.sdr;
+    });
+    return sdrsForOrg.map(mapFromBaserow);
   },
-  
-  deleteSDR: (sdrId: number) => deleteRow(TABLE_IDS.users, sdrId),
 
+  deleteSDR: (sdrId: number) => deleteRow(TABLE_IDS.users, sdrId),
   updateSDR: (sdrId: number, data: { name?: string; email?: string }) => {
     const rowData: { [key: string]: any } = {};
     if (data.name) rowData[FIELD_IDS.users.name] = data.name;
@@ -189,25 +191,46 @@ export const baserowService = {
     return updateRow(TABLE_IDS.users, sdrId, rowData);
   },
   
-  getCallRecordings: (organizationId: number) => listRows<BaserowCallRecording>(TABLE_IDS.callRecordings, { [FIELD_IDS.callRecordings.organization]: organizationId }),
+  async getCallRecordings(organizationId: number, sdrId?: number): Promise<BaserowCallRecording[]> {
+    const allRecordings = await listAllRows<BaserowCallRecording>(TABLE_IDS.callRecordings);
+    const recordingsForOrg = allRecordings.filter(rec => {
+        const recOrg = (rec[FIELD_IDS.callRecordings.organization] as any[])?.[0];
+        return recOrg?.id === organizationId;
+    });
+    if (!sdrId) {
+      return recordingsForOrg;
+    }
+    return recordingsForOrg.filter(rec => {
+        const recSdr = (rec[FIELD_IDS.callRecordings.sdr] as any[])?.[0];
+        return recSdr?.id === sdrId;
+    });
+  },
 
-  async getCallAnalyses(organizationId: number): Promise<BaserowCallAnalysis[]> {
-    const allAnalyses = await listRows<BaserowCallAnalysis>(TABLE_IDS.analyses);
-    // Filtro manual para contornar a limitação da API em campos Lookup
-    return allAnalyses.filter(analysis => {
+  async getCallAnalyses(organizationId: number, sdrId?: number): Promise<BaserowCallAnalysis[]> {
+    const allAnalyses = await listAllRows<BaserowCallAnalysis>(TABLE_IDS.analyses);
+    const analysesForOrg = allAnalyses.filter(analysis => {
         const orgLink = (analysis[FIELD_IDS.analyses.organization] as any[])?.[0];
         return orgLink?.id === organizationId;
+    });
+    if (!sdrId) {
+      return analysesForOrg;
+    }
+    return analysesForOrg.filter(analysis => {
+        const callRecording = (analysis[FIELD_IDS.analyses.callRecording] as any[])?.[0];
+        const linkedSdr = (callRecording?.[FIELD_IDS.callRecordings.sdr] as any[])?.[0];
+        return linkedSdr?.id === sdrId;
     });
   },
 
   getCallRecordingById: (recordingId: number) => getRow<BaserowCallRecording>(TABLE_IDS.callRecordings, recordingId),
-  getAnalysisByRecordingId: (recordingId: number) => listRows<BaserowCallAnalysis>(TABLE_IDS.analyses, { [FIELD_IDS.analyses.callRecording]: recordingId }).then(res => res[0] || null),
+  getAnalysisByRecordingId: (recordingId: number) => listAllRows<BaserowCallAnalysis>(TABLE_IDS.analyses).then(res => res.find(a => a[FIELD_IDS.analyses.callRecording]?.[0]?.id === recordingId) || null),
   getSDRById: (sdrId: number) => getRow<BaserowUser>(TABLE_IDS.users, sdrId),
   updateManagerFeedback: (analysisId: number, feedback: string) => updateRow(TABLE_IDS.analyses, analysisId, { [FIELD_IDS.analyses.managerFeedback]: feedback }),
-  
+
   async signUpAdmin(data: { name: string; email: string; password: string; companyName: string }) {
-    const existingUsers = await listRows(TABLE_IDS.users, { [FIELD_IDS.users.email]: data.email });
-    if (existingUsers.length > 0) throw new Error("Este endereço de email já está em uso.");
+    const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
+    const existingUser = allUsers.find(u => u[FIELD_IDS.users.email] === data.email);
+    if (existingUser) throw new Error("Este endereço de email já está em uso.");
     const passwordHash = await bcrypt.hash(data.password, 10);
     const newUserRow = {
         [FIELD_IDS.users.name]: data.name, [FIELD_IDS.users.email]: data.email,
@@ -219,33 +242,50 @@ export const baserowService = {
     await updateRow(TABLE_IDS.users, newUser.id, { [FIELD_IDS.users.organization]: [newOrg.id] });
   },
 
+  async getMetricOptions(): Promise<{id: number, value: string}[]> {
+      const url = `${BASE_URL}/api/database/fields/table/${TABLE_IDS.goals}/`;
+      const fields = await apiCall(url, { method: 'GET', headers });
+      const metricField = fields.find((f: any) => f.id === parseInt(FIELD_IDS.goals.metric.replace('field_', ''), 10));
+      return metricField?.select_options || [];
+  },
+
   async createGoal(data: { name: string; metric: string; startDate: string; endDate: string; targetValue: number; sdrId: string; organizationId: number; }) {
-    const newGoalRow = {
-      [FIELD_IDS.goals.name]: data.name,
-      [FIELD_IDS.goals.metric]: data.metric,
-      [FIELD_IDS.goals.startDate]: data.startDate,
-      [FIELD_IDS.goals.endDate]: data.endDate,
-      [FIELD_IDS.goals.targetValue]: data.targetValue,
-      [FIELD_IDS.goals.organization]: [data.organizationId],
-      ...(data.sdrId !== 'team' && { [FIELD_IDS.goals.assignedTo]: [Number(data.sdrId)] }),
-    };
-    return createRow<BaserowGoal>(TABLE_IDS.goals, newGoalRow);
+      const metricOptions = await this.getMetricOptions();
+      const metricOption = metricOptions.find(opt => opt.value === data.metric);
+      if (!metricOption) {
+          throw new Error("Métrica selecionada é inválida.");
+      }
+      const newGoalRow = {
+        [FIELD_IDS.goals.name]: data.name,
+        [FIELD_IDS.goals.metric]: { id: metricOption.id },
+        [FIELD_IDS.goals.startDate]: data.startDate,
+        [FIELD_IDS.goals.endDate]: data.endDate,
+        [FIELD_IDS.goals.targetValue]: data.targetValue,
+        [FIELD_IDS.goals.organization]: [data.organizationId],
+        ...(data.sdrId !== 'team' && { [FIELD_IDS.goals.assignedTo]: [Number(data.sdrId)] }),
+      };
+      return createRow(TABLE_IDS.goals, newGoalRow);
   },
 
   async getGoals(organizationId: number): Promise<GoalData[]> {
-    const filters = { [FIELD_IDS.goals.organization]: organizationId };
-    const rawGoals = await listRows<BaserowGoal>(TABLE_IDS.goals, filters);
-    return rawGoals.map(mapGoalFromBaserow);
+    const allGoals = await listAllRows<BaserowGoal>(TABLE_IDS.goals);
+    const goalsForOrg = allGoals.filter(goal => {
+        const goalOrg = (goal[FIELD_IDS.goals.organization] as any[])?.[0];
+        return goalOrg?.id === organizationId;
+    });
+    return goalsForOrg.map(mapGoalFromBaserow);
   },
+  
+  updateGoal: (goalId: number, dataToUpdate: object) => updateRow(TABLE_IDS.goals, goalId, dataToUpdate),
+  deleteGoal: (goalId: number) => deleteRow(TABLE_IDS.goals, goalId),
 
+  // FUNÇÃO RESTAURADA NO LOCAL CORRETO
   async getLeaderboardData(organizationId: number) {
     const [allSDRs, analyses] = await Promise.all([
       this.getAllSDRs(organizationId),
       this.getCallAnalyses(organizationId)
     ]);
-
     const sdrScores: { [sdrId: number]: { totalScore: number; callCount: number } } = {};
-
     analyses.forEach(analysis => {
         const callRecordingInfo = (analysis[FIELD_IDS.analyses.callRecording] as any[])?.[0];
         if (callRecordingInfo) {
@@ -257,59 +297,12 @@ export const baserowService = {
             }
         }
     });
-
     const leaderboard = allSDRs.map(sdr => ({
       sdr_id: sdr.id, name: sdr.name, email: sdr.email,
       total_calls: sdrScores[sdr.id]?.callCount || 0,
       avg_score: sdrScores[sdr.id] && sdrScores[sdr.id].callCount > 0 ? Math.round(sdrScores[sdr.id].totalScore / sdrScores[sdr.id].callCount) : 0,
     }));
-
     return leaderboard.sort((a, b) => b.avg_score - a.avg_score)
                       .map((sdr, index) => ({ ...sdr, rank: index + 1 }));
-  },
-
-  async getTeamSpinScores(organizationId: number, startDate: string, endDate: string) {
-    const analysesForOrg = await this.getCallAnalyses(organizationId);
-    const recordingsForOrg = await this.getCallRecordings(organizationId);
-
-    const recordingsMap = new Map(recordingsForOrg.map(r => [r.id, r]));
-
-    const filteredAnalyses = analysesForOrg.filter(a => {
-      const callRecordingLink = (a[FIELD_IDS.analyses.callRecording] as any[])?.[0];
-      if (!callRecordingLink) return false;
-      const recording = recordingsMap.get(callRecordingLink.id);
-      if (!recording) return false;
-      
-      const callDate = new Date(recording[FIELD_IDS.callRecordings.callDate]);
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      
-      return callDate >= start && callDate <= end;
-    });
-
-    if (filteredAnalyses.length === 0) {
-      return { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
-    }
-    const totalScores = { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
-    filteredAnalyses.forEach(a => {
-      if (a[FIELD_IDS.analyses.spinAnalysis]) {
-        try {
-          const spinData = JSON.parse(a[FIELD_IDS.analyses.spinAnalysis]);
-          totalScores.situation += spinData.situation.score || 0;
-          totalScores.problem += spinData.problem.score || 0;
-          totalScores.implication += spinData.implication.score || 0;
-          totalScores.need_payoff += spinData.need_payoff.score || 0;
-        } catch (e) {
-          console.error("Erro ao parsear a análise SPIN:", e);
-        }
-      }
-    });
-    return {
-      situation: Math.round(totalScores.situation / filteredAnalyses.length),
-      problem: Math.round(totalScores.problem / filteredAnalyses.length),
-      implication: Math.round(totalScores.implication / filteredAnalyses.length),
-      need_payoff: Math.round(totalScores.need_payoff / filteredAnalyses.length),
-    };
   },
 };
