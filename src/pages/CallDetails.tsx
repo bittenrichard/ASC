@@ -9,6 +9,7 @@ import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis';
 import { PlaybookAnalysis } from '../components/CallDetails/PlaybookAnalysis';
 import { CrmSync } from '../components/CallDetails/CrmSync';
 import toast from 'react-hot-toast';
+import { backendService } from '../lib/api'; // NOVA IMPORTAÇÃO
 
 interface CallDetailsData {
   recording: BaserowCallRecording;
@@ -56,12 +57,12 @@ export function CallDetails() {
         setFeedback(analysis[FIELD_IDS.analyses.managerFeedback] || '');
       }
 
-      // NOVO: Descarregar o áudio de forma segura
+      // NOVO: Descarregar o áudio de forma segura através do novo serviço
       const audioFileUrl = recording[FIELD_IDS.callRecordings.audioUrl]?.[0]?.url;
       if (audioFileUrl) {
         try {
-          const audioBlob = await baserowService.fetchProtectedFile(audioFileUrl);
-          const objectUrl = URL.createObjectURL(audioBlob);
+          // Usa o novo serviço para obter a URL do blob de áudio do backend
+          const objectUrl = await backendService.getAudioFile(audioFileUrl);
           setAudioSrc(objectUrl);
         } catch (audioError) {
           console.error("Erro ao carregar o áudio:", audioError);
