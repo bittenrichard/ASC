@@ -1,14 +1,13 @@
 // src/pages/Calls.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { baserowService } from '../lib/baserowService';
-import { CallsTable } from '../components/Dashboard/CallsTable';
+import { baserowService, BaserowCallRecording, BaserowCallAnalysis, FIELD_IDS } from '../lib/baserowService';
+import { UploadCloud, Loader2, Search, Calendar, User, Clock, Star } from 'lucide-react';
 import { UploadModal } from '../components/Calls/UploadModal';
-import { RecordingModal } from '../components/Calls/RecordingModal';
-import { Calendar, Filter, Search, Upload, Mic } from 'lucide-react';
-import type { BaserowCallRecording, BaserowUser, BaserowCallAnalysis } from '../lib/baserowService';
+import { useNavigate } from 'react-router-dom';
 
+// Interface para os dados combinados que a tabela vai usar
 interface CombinedCallData {
   call_id: string;
   sdr_id: number | null;
@@ -16,21 +15,20 @@ interface CombinedCallData {
   call_date: string;
   efficiency_score: number;
   status: string;
-  sdr_name?: string;
+  sdr_name: string;
   call_duration_seconds: number;
 }
 
-const Calls: React.FC = () => {
-  const { user, loading: authLoading } = useAuth();
-  const [searchTerm, setSearchTerm] = useState('');
+export default function Calls() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [allCalls, setAllCalls] = useState<CombinedCallData[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isRecordingModalOpen, setIsRecordingModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
+  // Função para buscar e combinar os dados do Baserow
   const fetchCallsData = useCallback(async () => {
-    // Guarda de segurança: só executa se o utilizador estiver carregado e tiver um organizationId
     if (!user || !user.organizationId) {
       setLoadingData(false);
       return;
@@ -38,29 +36,36 @@ const Calls: React.FC = () => {
 
     setLoadingData(true);
     try {
-      const recordings = await baserowService.getCallRecordings(user.organizationId);
-      const analyses = await baserowService.getCallAnalyses(user.organizationId);
+      // Busca os dados brutos do Baserow
+      const recordings: BaserowCallRecording[] = await baserowService.getCallRecordings(user.organizationId);
+      const analyses: BaserowCallAnalysis[] = await baserowService.getCallAnalyses(user.organizationId);
       const allSDRs = await baserowService.getAllSDRs(user.organizationId);
 
-      const analysesMap = new Map(analyses.map(a => [a.Call_Recording[0]?.id, a]));
-      const sdrMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.Name]));
+      // Cria mapas para facilitar a busca de dados relacionados
+      const analysesMap = new Map(analyses.map(a => [a[FIELD_IDS.analyses.callRecording]?.[0]?.id, a]));
+      const sdrMap = new Map(allSDRs.map(sdr => [sdr.id, sdr.name]));
 
+      // Combina os dados, usando a "REGRA SUPREMA" (FIELD_IDS)
       let combinedData: CombinedCallData[] = recordings
-        .sort((a, b) => new Date(b.Call_Date).getTime() - new Date(a.Call_Date).getTime())
+        .sort((a, b) => new Date(b[FIELD_IDS.callRecordings.callDate]).getTime() - new Date(a[FIELD_IDS.callRecordings.callDate]).getTime())
         .map(rec => {
-          const sdrId = rec.SDR && rec.SDR.length > 0 ? rec.SDR[0].id : null;
+          const sdrId = rec[FIELD_IDS.callRecordings.sdr]?.[0]?.id || null;
+          const analysisData = analysesMap.get(rec.id);
+          
           return {
             call_id: rec.id.toString(),
             sdr_id: sdrId,
-            prospect_name: rec.Prospect_Name,
-            call_date: rec.Call_Date,
-            efficiency_score: analysesMap.get(rec.id)?.Efficiency_Score || 0,
-            status: rec.Status?.value || 'N/A',
+            prospect_name: rec[FIELD_IDS.callRecordings.prospectName] || 'N/A',
+            call_date: rec[FIELD_IDS.callRecordings.callDate],
+            efficiency_score: analysisData?.[FIELD_IDS.analyses.efficiencyScore] || 0,
+            // O acesso a campos de seleção é diferente, por isso não usamos FIELD_IDS aqui
+            status: analysisData ? 'Analisada' : 'Pendente',
             sdr_name: sdrId ? sdrMap.get(sdrId) : 'N/A',
-            call_duration_seconds: rec.Call_Duration_Seconds || 0,
+            call_duration_seconds: rec[FIELD_IDS.callRecordings.duration] || 0,
           };
         });
 
+      // Filtra as chamadas para o SDR logado, se não for admin
       if (user.role !== 'administrator') {
         combinedData = combinedData.filter(call => call.sdr_id === user.id);
       }
@@ -76,54 +81,112 @@ const Calls: React.FC = () => {
   useEffect(() => {
     fetchCallsData();
   }, [fetchCallsData]);
-  
-  const filteredCalls = allCalls.filter(call => 
-    call.prospect_name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
-  if (authLoading || loadingData) {
-    return <div className="p-8 text-center">A carregar chamadas...</div>;
-  }
+  const onUploadSuccess = () => {
+    setIsModalOpen(false);
+    fetchCallsData(); // Recarrega os dados após um novo upload
+  };
+
+  const filteredCalls = useMemo(() => {
+    return allCalls.filter(call =>
+      // Proteção contra valores nulos/undefined
+      (call.prospect_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [allCalls, searchTerm]);
+
+  // Função para formatar a duração
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
 
   return (
     <>
-      <UploadModal 
-        isOpen={isUploadModalOpen} 
-        onClose={() => setIsUploadModalOpen(false)}
-        onUploadComplete={fetchCallsData}
-      />
-      <RecordingModal
-        isOpen={isRecordingModalOpen}
-        onClose={() => setIsRecordingModalOpen(false)}
-        onUploadComplete={fetchCallsData}
-      />
+      <UploadModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onUploadSuccess={onUploadSuccess} />
       <div className="p-8 space-y-8">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-            <h1 className="text-3xl font-bold text-text-primary">Histórico de Chamadas</h1>
-            <div className="flex items-center space-x-4">
-                <button 
-                    onClick={() => setIsRecordingModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-surface text-text-primary font-semibold border border-gray-200 rounded-lg hover:bg-background"
-                >
-                    <Mic className="w-5 h-5" />
-                    <span>Gravar Chamada</span>
-                </button>
-                <button 
-                    onClick={() => setIsUploadModalOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:opacity-90"
-                >
-                    <Upload className="w-5 h-5" />
-                    <span>Enviar Gravação</span>
-                </button>
-            </div>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-text-primary">
+              {user?.role === 'administrator' ? 'Todas as Chamadas' : 'Minhas Chamadas'}
+            </h1>
+            <p className="text-text-secondary mt-1">Veja e analise as gravações da sua equipe.</p>
+          </div>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <UploadCloud className="w-5 h-5" />
+            <span>Nova Gravação</span>
+          </button>
         </div>
 
-        {/* Os filtros podem ser adicionados aqui no futuro */}
-        
-        <CallsTable calls={filteredCalls} showSDRColumn={user?.role === 'administrator'} title="Todas as Chamadas" />
+        {/* Barra de Pesquisa */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Pesquisar por nome do prospecto..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-12 pr-4 py-3 bg-surface border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
+
+        {/* Tabela de Chamadas */}
+        <div className="bg-surface p-6 rounded-2xl shadow-lg border border-gray-100">
+          <div className="overflow-x-auto">
+            {loadingData ? (
+              <div className="text-center py-12">
+                <Loader2 className="h-8 w-8 mx-auto animate-spin text-primary" />
+                <p className="mt-2 text-text-secondary">A carregar chamadas...</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-text-secondary uppercase bg-background">
+                  <tr>
+                    <th className="px-6 py-3">Prospecto</th>
+                    <th className="px-6 py-3">SDR</th>
+                    <th className="px-6 py-3">Data</th>
+                    <th className="px-6 py-3">Duração</th>
+                    <th className="px-6 py-3">Pontuação</th>
+                    <th className="px-6 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="text-text-primary">
+                  {filteredCalls.map(call => (
+                    <tr
+                      key={call.call_id}
+                      onClick={() => navigate(`/call/${call.call_id}`)}
+                      className="hover:bg-background border-b border-gray-100 cursor-pointer"
+                    >
+                      <td className="px-6 py-4 font-semibold">{call.prospect_name}</td>
+                      <td className="px-6 py-4">{call.sdr_name}</td>
+                      <td className="px-6 py-4">{new Date(call.call_date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4">{formatDuration(call.call_duration_seconds)}</td>
+                      <td className="px-6 py-4 font-bold">{call.efficiency_score || '--'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                          call.status === 'Analisada'
+                            ? 'bg-accent/10 text-accent-dark'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {call.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {!loadingData && filteredCalls.length === 0 && (
+              <div className="text-center py-12 text-text-secondary">
+                <p>Nenhuma chamada encontrada.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </>
   );
-};
-
-export default Calls;
+}

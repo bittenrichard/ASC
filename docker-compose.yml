@@ -1,0 +1,40 @@
+# docker-compose.yml - Versão Final para Produção (Frontend + Backend)
+
+version: '3.8'
+
+services:
+  # --- Serviço do Backend (API) ---
+  backend:
+    image: orickjogando/copiloto-sdr-backend:1.0.0
+    container_name: copiloto-sdr-backend
+    environment:
+      - OPENAI_API_KEY=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 # Insira a sua chave da OpenAI
+    networks:
+      - network
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network"
+        - "traefik.http.routers.copiloto-backend-router.rule=Host(`backend.calculei.online`)"
+        - "traefik.http.routers.copiloto-backend-router.entrypoints=websecure"
+        - "traefik.http.routers.copiloto-backend-router.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.copiloto-backend-service.loadbalancer.server.port=3000"
+
+  # --- Serviço do Frontend (React App) ---
+  frontend:
+    image: orickjogando/copiloto-sdr-frontend:1.0.0
+    container_name: copiloto-sdr-frontend
+    networks:
+      - network
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network"
+        - "traefik.http.routers.copiloto-frontend-router.rule=Host(`copiloto.calculei.online`)" # <-- URL DO SEU FRONTEND
+        - "traefik.http.routers.copiloto-frontend-router.entrypoints=websecure"
+        - "traefik.http.routers.copiloto-frontend-router.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.copiloto-frontend-service.loadbalancer.server.port=80"
+
+networks:
+  network:
+    external: true

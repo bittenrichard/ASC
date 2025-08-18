@@ -64,7 +64,7 @@ export const FIELD_IDS = {
   users: { name: 'field_6779', email: 'field_6753', passwordHash: 'field_6754', appRole: 'field_6759', organization: 'field_6760' },
   organizations: { name: 'field_6746', owner: 'field_6761' },
   callRecordings: { prospectName: 'field_6757', sdr: 'field_6758', organization: 'field_6767', audioUrl: 'field_6769', duration: 'field_6781', callDate: 'field_6768' },
-  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6776', spinAnalysis: 'field_6793', playbookAnalysis: 'field_6805' },
+  analyses: { callRecording: 'field_6773', organization: 'field_6780', managerFeedback: 'field_6782', efficiencyScore: 'field_6776', spinAnalysis: 'field_6793', playbookAnalysis: 'field_6805', full_transcript: 'field_6806' },
   goals: {
     name: 'field_6783',
     metric: 'field_6784',
@@ -241,22 +241,19 @@ export const baserowService = {
     if (data.email) rowData[FIELD_IDS.users.email] = data.email;
     return updateRow(TABLE_IDS.users, sdrId, rowData);
   },
-  async getCallRecordings(organizationId: number, sdrId?: number): Promise<BaserowCallRecording[]> {
-    const allRecordings = await listAllRows<BaserowCallRecording>(TABLE_IDS.callRecordings);
-    const recordingsForOrg = allRecordings.filter(rec => (rec[FIELD_IDS.callRecordings.organization] as any[])?.[0]?.id === organizationId);
-    if (!sdrId) return recordingsForOrg;
-    return recordingsForOrg.filter(rec => (rec[FIELD_IDS.callRecordings.sdr] as any[])?.[0]?.id === sdrId);
-  },
-  async getCallAnalyses(organizationId: number, sdrId?: number): Promise<BaserowCallAnalysis[]> {
-    const allAnalyses = await listAllRows<BaserowCallAnalysis>(TABLE_IDS.analyses);
-    const analysesForOrg = allAnalyses.filter(analysis => (analysis[FIELD_IDS.analyses.organization] as any[])?.[0]?.id === organizationId);
-    if (!sdrId) return analysesForOrg;
-    return analysesForOrg.filter(analysis => {
+  getCallRecordings: (organizationId: number, sdrId?: number) => listAllRows<BaserowCallRecording>(TABLE_IDS.callRecordings).then(recordings => {
+      const recordingsForOrg = recordings.filter(rec => (rec[FIELD_IDS.callRecordings.organization] as any[])?.[0]?.id === organizationId);
+      if (!sdrId) return recordingsForOrg;
+      return recordingsForOrg.filter(rec => (rec[FIELD_IDS.callRecordings.sdr] as any[])?.[0]?.id === sdrId);
+  }),
+  getCallAnalyses: (organizationId: number, sdrId?: number) => listAllRows<BaserowCallAnalysis>(TABLE_IDS.analyses).then(analyses => {
+      const analysesForOrg = analyses.filter(analysis => (analysis[FIELD_IDS.analyses.organization] as any[])?.[0]?.id === organizationId);
+      if (!sdrId) return analysesForOrg;
+      return analysesForOrg.filter(analysis => {
         const callRecording = (analysis[FIELD_IDS.analyses.callRecording] as any[])?.[0];
-        const linkedSdr = (callRecording?.[FIELD_IDS.callRecordings.sdr] as any[])?.[0];
-        return linkedSdr?.id === sdrId;
-    });
-  },
+        return callRecording?.[FIELD_IDS.callRecordings.sdr]?.[0]?.id === sdrId;
+      });
+  }),
   getCallRecordingById: (recordingId: number) => getRow<BaserowCallRecording>(TABLE_IDS.callRecordings, recordingId),
   getAnalysisByRecordingId: (recordingId: number) => listAllRows<BaserowCallAnalysis>(TABLE_IDS.analyses).then(res => res.find(a => a[FIELD_IDS.analyses.callRecording]?.[0]?.id === recordingId) || null),
   getSDRById: (sdrId: number) => getRow<BaserowUser>(TABLE_IDS.users, sdrId),
@@ -302,11 +299,7 @@ export const baserowService = {
       };
       return createRow(TABLE_IDS.goals, newGoalRow);
   },
-  async getGoals(organizationId: number): Promise<GoalData[]> {
-    const allGoals = await listAllRows<BaserowGoal>(TABLE_IDS.goals);
-    const goalsForOrg = allGoals.filter(goal => (goal[FIELD_IDS.goals.organization] as any[])?.[0]?.id === organizationId);
-    return goalsForOrg.map(mapGoalFromBaserow);
-  },
+  getGoals: (organizationId: number) => listAllRows<BaserowGoal>(TABLE_IDS.goals).then(goals => goals.filter(goal => (goal[FIELD_IDS.goals.organization] as any[])?.[0]?.id === organizationId).map(mapGoalFromBaserow)),
   updateGoal: (goalId: number, dataToUpdate: object) => updateRow(TABLE_IDS.goals, goalId, dataToUpdate),
   deleteGoal: (goalId: number) => deleteRow(TABLE_IDS.goals, goalId),
   async getLeaderboardData(organizationId: number) {
@@ -330,10 +323,7 @@ export const baserowService = {
     }));
     return leaderboard.sort((a, b) => b.avg_score - a.avg_score).map((sdr, index) => ({ ...sdr, rank: index + 1 }));
   },
-  async getPlaybooksByOrg(organizationId: number): Promise<Playbook[]> {
-    const allPlaybooks = await listAllRows<any>(TABLE_IDS.playbooks);
-    return allPlaybooks.filter(p => p[FIELD_IDS.playbooks.organization]?.[0]?.id === organizationId);
-  },
+  getPlaybooksByOrg: (organizationId: number) => listAllRows<Playbook>(TABLE_IDS.playbooks).then(playbooks => playbooks.filter(p => p[FIELD_IDS.playbooks.organization]?.[0]?.id === organizationId)),
   createPlaybook: (name: string, organizationId: number) => createRow<Playbook>(TABLE_IDS.playbooks, {
       [FIELD_IDS.playbooks.name]: name,
       [FIELD_IDS.playbooks.organization]: [organizationId],
@@ -351,4 +341,15 @@ export const baserowService = {
       [FIELD_IDS.playbookRules.description]: rule.description,
   }),
   deletePlaybookRule: (ruleId: number) => deleteRow(TABLE_IDS.playbookRules, ruleId),
+  
+  // NOVA FUNÇÃO PARA O LEITOR DE ÁUDIO
+  async fetchProtectedFile(fileUrl: string): Promise<Blob> {
+    const response = await fetch(fileUrl, {
+      headers: { 'Authorization': `Token ${API_TOKEN}` },
+    });
+    if (!response.ok) {
+      throw new Error('Falha ao descarregar o ficheiro protegido.');
+    }
+    return response.blob();
+  },
 };
