@@ -56,8 +56,8 @@ const TABLE_IDS = {
   callRecordings: import.meta.env.VITE_BASEROW_TABLE_CALL_RECORDINGS,
   analyses: import.meta.env.VITE_BASEROW_TABLE_ANALYSES,
   goals: import.meta.env.VITE_BASEROW_TABLE_METAS,
-  playbooks: '703',
-  playbookRules: '704',
+  playbooks: import.meta.env.VITE_BASEROW_TABLE_PLAYBOOKS,
+  playbookRules: import.meta.env.VITE_BASEROW_TABLE_PLAYBOOK_RULES,
 };
 
 export const FIELD_IDS = {
