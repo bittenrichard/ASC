@@ -49,6 +49,7 @@ export interface Playbook {
 // --- Configuração da API ---
 const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
 const API_TOKEN = import.meta.env.VITE_BASEROW_API_TOKEN;
+const ANALYSIS_FUNCTION_URL = import.meta.env.VITE_ANALYSIS_FUNCTION_URL;
 
 const TABLE_IDS = {
   users: import.meta.env.VITE_BASEROW_TABLE_USERS,
@@ -342,14 +343,36 @@ export const baserowService = {
   }),
   deletePlaybookRule: (ruleId: number) => deleteRow(TABLE_IDS.playbookRules, ruleId),
   
-  // NOVA FUNÇÃO PARA O LEITOR DE ÁUDIO
-  async fetchProtectedFile(fileUrl: string): Promise<Blob> {
-    const response = await fetch(fileUrl, {
-      headers: { 'Authorization': `Token ${API_TOKEN}` },
-    });
-    if (!response.ok) {
-      throw new Error('Falha ao descarregar o ficheiro protegido.');
-    }
-    return response.blob();
+  // FUNÇÃO DE LEITOR DE ÁUDIO REMOVIDA DEVIDO AO ERRO DE CORS
+  // async fetchProtectedFile(fileUrl: string): Promise<Blob> { ... },
+  
+  // FUNÇÃO PARA TRASFERIR O ARQUIVO PARA ANÁLISE NO BACKEND
+  async triggerAnalysis(recordingId: number) {
+      if (!ANALYSIS_FUNCTION_URL) {
+          throw new Error("A variável de ambiente VITE_ANALYSIS_FUNCTION_URL não está definida.");
+      }
+      const url = `${ANALYSIS_FUNCTION_URL}/trigger-analysis`;
+      
+      const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callRecordingId: recordingId }),
+      });
+
+      if (!response.ok) {
+          const errorResult = await response.json();
+          throw new Error(errorResult.error || "A API de análise falhou.");
+      }
+      return await response.json();
+  },
+
+  //Funções de Sincronização com CRM (mock) - a serem implementadas no futuro
+  async syncCallToHubspot(callId: number, data: any) {
+    toast.success(`Chamada #${callId} sincronizada com HubSpot! (mock)`);
+    return new Promise(resolve => setTimeout(resolve, 1000));
+  },
+  async syncCallToSalesforce(callId: number, data: any) {
+    toast.success(`Chamada #${callId} sincronizada com Salesforce! (mock)`);
+    return new Promise(resolve => setTimeout(resolve, 1000));
   },
 };

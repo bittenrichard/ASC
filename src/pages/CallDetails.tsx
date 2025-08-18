@@ -9,7 +9,6 @@ import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis';
 import { PlaybookAnalysis } from '../components/CallDetails/PlaybookAnalysis';
 import { CrmSync } from '../components/CallDetails/CrmSync';
 import toast from 'react-hot-toast';
-import { backendService } from '../lib/api'; // NOVA IMPORTAÇÃO
 
 interface CallDetailsData {
   recording: BaserowCallRecording;
@@ -57,17 +56,10 @@ export function CallDetails() {
         setFeedback(analysis[FIELD_IDS.analyses.managerFeedback] || '');
       }
 
-      // NOVO: Descarregar o áudio de forma segura através do novo serviço
+      // Agora o áudio é buscado diretamente do Baserow
       const audioFileUrl = recording[FIELD_IDS.callRecordings.audioUrl]?.[0]?.url;
       if (audioFileUrl) {
-        try {
-          // Usa o novo serviço para obter a URL do blob de áudio do backend
-          const objectUrl = await backendService.getAudioFile(audioFileUrl);
-          setAudioSrc(objectUrl);
-        } catch (audioError) {
-          console.error("Erro ao carregar o áudio:", audioError);
-          toast.error("Não foi possível carregar o áudio.");
-        }
+          setAudioSrc(audioFileUrl);
       }
     } catch (err) {
       setError('Falha ao carregar os dados da chamada.');
@@ -123,16 +115,8 @@ export function CallDetails() {
     
     try {
       const recordingId = callDetails.recording.id;
-      const analysisResponse = await fetch(`${import.meta.env.VITE_ANALYSIS_FUNCTION_URL}/trigger-analysis`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callRecordingId: recordingId }),
-      });
-
-      if (!analysisResponse.ok) {
-        const errorResult = await analysisResponse.json();
-        throw new Error(errorResult.error || "A API de análise falhou.");
-      }
+      // Chamada para a nova função que irá fazer a análise
+      await baserowService.triggerAnalysis(recordingId);
 
       toast.dismiss();
       toast.success("Análise concluída com sucesso!");
@@ -182,7 +166,7 @@ export function CallDetails() {
         </h1>
       </header>
       
-      {/* NOVO: Leitor de Áudio */}
+      {/* Leitor de Áudio */}
       <div className="bg-surface p-4 rounded-xl border">
         {loadingAudio ? (
           <p className="text-text-secondary text-sm">A carregar áudio...</p>
@@ -215,7 +199,7 @@ export function CallDetails() {
         </div>
       )}
 
-      {analysis && <SpinAnalysis analysisData={spinData} />}
+      {analysis && <SpinAnalysis spinAnalysis={spinData} />}
       {analysis && <PlaybookAnalysis analysisData={playbookData} />}
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
