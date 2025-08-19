@@ -9,6 +9,7 @@ import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis';
 import { PlaybookAnalysis } from '../components/CallDetails/PlaybookAnalysis';
 import { CrmSync } from '../components/CallDetails/CrmSync';
 import toast from 'react-hot-toast';
+import { backendService } from '../lib/api'; // Importação do serviço de backend
 
 interface CallDetailsData {
   recording: BaserowCallRecording;
@@ -56,13 +57,15 @@ export function CallDetails() {
         setFeedback(analysis[FIELD_IDS.analyses.managerFeedback] || '');
       }
 
-      // Agora o áudio é buscado diretamente do Baserow
       const audioFileUrl = recording[FIELD_IDS.callRecordings.audioUrl]?.[0]?.url;
       if (audioFileUrl) {
-          setAudioSrc(audioFileUrl);
+          const proxiedAudioUrl = await backendService.getAudioFile(audioFileUrl);
+          setAudioSrc(proxiedAudioUrl);
+      } else {
+          setAudioSrc(null);
       }
     } catch (err) {
-      setError('Falha ao carregar os dados da chamada.');
+      setError('Falha ao carregar os dados da chamada ou o áudio.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -115,13 +118,10 @@ export function CallDetails() {
     
     try {
       const recordingId = callDetails.recording.id;
-      // Chamada para a nova função que irá fazer a análise
       await baserowService.triggerAnalysis(recordingId);
-
       toast.dismiss();
       toast.success("Análise concluída com sucesso!");
       fetchCallDetails();
-
     } catch (error: any) {
       toast.dismiss();
       toast.error(error.message || "Ocorreu um erro durante a análise.");

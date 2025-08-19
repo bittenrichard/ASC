@@ -214,6 +214,10 @@ export const baserowService = {
     return createRow(TABLE_IDS.callRecordings, rowData);
   },
 
+  // FUNÇÕES NOVAS
+  updateCallRecording: (recordingId: number, dataToUpdate: object) => updateRow(TABLE_IDS.callRecordings, recordingId, dataToUpdate),
+  deleteCallRecording: (recordingId: number) => deleteRow(TABLE_IDS.callRecordings, recordingId),
+
   async createSDR(data: { name: string; email: string; password: string; organizationId: number; }) {
     const allUsers = await listAllRows<BaserowObject>(TABLE_IDS.users);
     const existingUser = allUsers.find(u => u[FIELD_IDS.users.email] === data.email);
@@ -343,10 +347,6 @@ export const baserowService = {
   }),
   deletePlaybookRule: (ruleId: number) => deleteRow(TABLE_IDS.playbookRules, ruleId),
   
-  // FUNÇÃO DE LEITOR DE ÁUDIO REMOVIDA DEVIDO AO ERRO DE CORS
-  // async fetchProtectedFile(fileUrl: string): Promise<Blob> { ... },
-  
-  // FUNÇÃO PARA TRASFERIR O ARQUIVO PARA ANÁLISE NO BACKEND
   async triggerAnalysis(recordingId: number) {
       if (!ANALYSIS_FUNCTION_URL) {
           throw new Error("A variável de ambiente VITE_ANALYSIS_FUNCTION_URL não está definida.");
@@ -366,7 +366,6 @@ export const baserowService = {
       return await response.json();
   },
 
-  //Funções de Sincronização com CRM (mock) - a serem implementadas no futuro
   async syncCallToHubspot(callId: number, data: any) {
     toast.success(`Chamada #${callId} sincronizada com HubSpot! (mock)`);
     return new Promise(resolve => setTimeout(resolve, 1000));

@@ -25,7 +25,7 @@ export function PlaybookModal({ isOpen, onClose, onSave, isSubmitting }: Playboo
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg m-4">
+      <div className="bg-surface p-8 rounded-2xl shadow-xl w-full max-w-lg m-4">
         <form onSubmit={handleSubmit}>
           <div className="p-6 border-b flex justify-between items-center">
             <h2 className="text-xl font-bold text-text-primary">Novo Playbook</h2>
@@ -38,14 +38,9 @@ export function PlaybookModal({ isOpen, onClose, onSave, isSubmitting }: Playboo
               Nome do Playbook
             </label>
             <input
-              id="playbookName"
-              name="playbookName"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
+              id="playbookName" type="text" required value={name} onChange={(e) => setName(e.target.value)}
+              className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               placeholder="Ex: Playbook de Qualificação Inicial"
-              className="w-full px-4 py-3 bg-background border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
           <div className="p-6 bg-background rounded-b-2xl flex justify-end space-x-4">
@@ -62,3 +57,5 @@ export function PlaybookModal({ isOpen, onClose, onSave, isSubmitting }: Playboo
     </div>
   );
 }
+
+export default PlaybookModal;

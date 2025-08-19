@@ -31,6 +31,7 @@ export const backendService = {
     } catch (error: any) {
       console.error("Erro no serviço de proxy de áudio:", error);
       const errorMessage = error.response?.data?.error || "Falha ao buscar o arquivo de áudio. Verifique o console para mais detalhes.";
+      toast.error(errorMessage);
       throw new Error(errorMessage);
     }
   },

@@ -31,7 +31,7 @@ export function CallsTable({ calls, showSDRColumn = false, title = "Chamadas Rec
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Analisada': return 'text-accent-dark bg-accent/10';
-      case 'Processando': return 'text-yellow-600 bg-yellow-50';
+      case 'Pendente': return 'text-yellow-600 bg-yellow-50';
       default: return 'text-text-secondary bg-gray-100';
     }
   };
