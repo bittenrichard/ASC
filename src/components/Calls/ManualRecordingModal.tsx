@@ -2,185 +2,166 @@
 import React, { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { Loader2, Mic, StopCircle, Save, X } from 'lucide-react';
-import { baserowService } from '../../lib/baserowService';
+import { useAuth } from '../../hooks/useAuth';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 interface ManualRecordingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onRecordingSaved: (audioBlob: Blob, prospectName: string, callDate: string, sdrId: number, callDurationSeconds: number) => void;
-  sdrId: number;
+  onUploadComplete: () => void;
 }
 
-export const ManualRecordingModal: React.FC<ManualRecordingModalProps> = ({ isOpen, onClose, onRecordingSaved, sdrId }) => {
-  const [isRecording, setIsRecording] = useState(false);
+export const ManualRecordingModal: React.FC<ManualRecordingModalProps> = ({ isOpen, onClose, onUploadComplete }) => {
+  const { user } = useAuth();
   const [prospectName, setProspectName] = useState('');
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
-  const [audioURL, setAudioURL] = useState('');
   const [status, setStatus] = useState<'idle' | 'recording' | 'finished' | 'saving'>('idle');
   const [seconds, setSeconds] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (status === 'recording') {
-      intervalRef.current = setInterval(() => {
-        setSeconds((prevSeconds) => prevSeconds + 1);
-      }, 1000);
+      intervalRef.current = setInterval(() => setSeconds(s => s + 1), 1000);
     } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     }
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [status]);
 
   const startRecording = async () => {
-    if (status !== 'idle' && status !== 'finished') return;
     if (!prospectName.trim()) {
-      toast.error('Por favor, insira o nome do prospecto antes de gravar.');
+      toast.error('Por favor, insira o nome do prospecto.');
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      
+      audioChunksRef.current = [];
       mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-            setAudioChunks((prev) => [...prev, event.data]);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
-
       mediaRecorderRef.current.onstop = () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const url = URL.createObjectURL(audioBlob);
-        setAudioURL(url);
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
         setStatus('finished');
       };
-      
       mediaRecorderRef.current.start();
-      setIsRecording(true);
-      setAudioChunks([]);
       setStatus('recording');
       setSeconds(0);
       toast.success('Gravação iniciada!');
     } catch (err) {
-      console.error('Erro ao acessar o microfone:', err);
-      toast.error('Não foi possível iniciar a gravação. Verifique as permissões do microfone.');
-      setIsRecording(false);
-      setStatus('idle');
+      toast.error('Verifique as permissões do microfone.');
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
     }
   };
 
-  const handleSave = () => {
-    if (status !== 'finished' || audioChunks.length === 0) {
-      toast.error('Nenhuma gravação para salvar.');
-      return;
-    }
+  const handleSave = async () => {
+    if (!audioBlob || !user) return;
     setStatus('saving');
-    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-    const callDate = new Date().toISOString();
-    onRecordingSaved(audioBlob, prospectName, callDate, sdrId, seconds);
-    resetStateAndClose();
-  };
+    
+    const audioFile = new File([audioBlob], `gravacao-${Date.now()}.webm`, { type: 'audio/webm' });
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+    formData.append('prospectName', prospectName);
+    formData.append('sdrId', String(user.id));
+    formData.append('organizationId', String(user.organizationId));
+    formData.append('duration', String(seconds));
 
-  const formatTime = (totalSeconds: number) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  };
+    const uploadToast = toast.loading('A enviar gravação...');
+    
+    try {
+      const uploadResponse = await axios.post(`${API_URL}/upload`, formData);
+      const { call } = uploadResponse.data;
+      
+      toast.loading('A transcrever áudio...', { id: uploadToast });
 
-  const resetStateAndClose = () => {
-    if (audioURL) URL.revokeObjectURL(audioURL);
-    setAudioChunks([]);
-    setAudioURL('');
+      await axios.post(`${API_URL}/transcribe`, { callId: call.id });
+
+      toast.success('Processo concluído!', { id: uploadToast });
+      onUploadComplete();
+      handleClose();
+    } catch (error: any) {
+      const errorMessage = error.response?.data?.error || "Ocorreu um erro desconhecido.";
+      toast.error(errorMessage, { id: uploadToast });
+      setStatus('finished');
+    }
+  };
+  
+  const handleClose = () => {
+    stopRecording();
     setProspectName('');
     setStatus('idle');
     setSeconds(0);
+    setAudioBlob(null);
     onClose();
   };
 
   if (!isOpen) return null;
+  const isProcessing = status === 'recording' || status === 'saving';
+  const formatTime = (totalSeconds: number) => `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
-      <div className="bg-surface p-8 rounded-2xl shadow-2xl w-full max-w-lg mx-4 border border-gray-200 relative">
-        <button onClick={resetStateAndClose} className="absolute top-4 right-4 text-text-secondary hover:text-red-500">
+      <div className="bg-surface p-8 rounded-2xl shadow-2xl w-full max-w-lg mx-4 border relative">
+        <button onClick={handleClose} className="absolute top-4 right-4 text-text-secondary hover:text-red-500">
           <X size={24} />
         </button>
         <h2 className="text-2xl font-bold text-text-primary mb-4">Gravar Nova Chamada</h2>
         
         <div className="mb-4">
-          <label htmlFor="prospectName" className="block text-sm font-medium text-text-secondary mb-1">Nome do Prospecto</label>
+          <label htmlFor="prospectNameModal" className="block text-sm font-medium text-text-secondary mb-1">Nome do Prospecto</label>
           <input
-            type="text"
-            id="prospectName"
-            value={prospectName}
-            onChange={(e) => setProspectName(e.target.value)}
-            disabled={isRecording}
-            placeholder="Ex: João Silva - Empresa X"
-            className="w-full px-4 py-2 bg-background border border-gray-300 rounded-lg text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary"
+            type="text" id="prospectNameModal" value={prospectName} onChange={(e) => setProspectName(e.target.value)}
+            disabled={isProcessing} placeholder="Ex: João Silva - Empresa X"
+            className="w-full px-4 py-2 bg-background border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </div>
 
         <div className="flex flex-col items-center justify-center space-y-4 my-6">
           <p className="text-4xl font-mono text-text-primary">{formatTime(seconds)}</p>
-          
           <div className="flex space-x-4">
-            {status === 'idle' || status === 'finished' ? (
-              <button
-                onClick={startRecording}
-                disabled={status === 'saving' || !prospectName.trim()}
-                className="w-16 h-16 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+            {status !== 'recording' ? (
+              <button onClick={startRecording} disabled={!prospectName.trim() || isProcessing}
+                className="w-16 h-16 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary/80 disabled:opacity-50">
                 <Mic size={32} />
               </button>
             ) : (
-              <button
-                onClick={stopRecording}
-                disabled={status === 'saving'}
-                className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <button onClick={stopRecording}
+                className="w-16 h-16 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600">
                 <StopCircle size={32} />
               </button>
             )}
             
             {status === 'finished' && (
-              <button
-                onClick={handleSave}
-                disabled={status === 'saving'}
-                className="w-16 h-16 rounded-full bg-green-500 text-white flex items-center justify-center hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <button onClick={handleSave} disabled={status === 'saving'}
+                className="w-16 h-16 rounded-full bg-accent text-white flex items-center justify-center hover:bg-accent/80 disabled:opacity-50">
                 {status === 'saving' ? <Loader2 size={32} className="animate-spin" /> : <Save size={32} />}
               </button>
             )}
           </div>
-          
           <p className="text-sm text-text-secondary italic">
-            {status === 'idle' && 'Clique para iniciar a gravação.'}
+            {status === 'idle' && 'Clique para iniciar.'}
             {status === 'recording' && 'Gravando...'}
-            {status === 'finished' && 'Gravação finalizada. Salve ou inicie uma nova.'}
-            {status === 'saving' && 'Salvando gravação...'}
+            {status === 'finished' && 'Gravação finalizada. Clique em salvar.'}
+            {status === 'saving' && 'A processar gravação...'}
           </p>
         </div>
         
-        {status === 'finished' && audioURL && (
-          <div className="mt-4">
-            <h4 className="text-md font-semibold mb-2 text-text-primary">Pré-visualização do Áudio:</h4>
-            <audio controls className="w-full" src={audioURL}></audio>
-          </div>
+        {status === 'finished' && audioBlob && (
+          <audio controls className="w-full" src={URL.createObjectURL(audioBlob)}></audio>
         )}
       </div>
     </div>

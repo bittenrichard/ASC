@@ -2,9 +2,11 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, X, Loader2, FileAudio } from 'lucide-react';
-import { baserowService } from '../../lib/baserowService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 interface UploadModalProps {
   isOpen: boolean;
@@ -16,7 +18,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
   const { user } = useAuth();
   const [prospectName, setProspectName] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'transcribing' | 'error'>('idle');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) setFile(acceptedFiles[0]);
@@ -30,38 +32,52 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
 
   const handleUpload = async () => {
     if (!file || !prospectName || !user) return;
-    setIsUploading(true);
-    try {
-      // 1. Enviar o arquivo e obter a referência
-      const uploadedFile = await baserowService.uploadFile(file);
-      
-      // 2. Criar o registo da chamada com a referência do arquivo
-      await baserowService.createCallRecording({
-        prospectName: prospectName,
-        sdrId: user.id,
-        organizationId: user.organizationId,
-        duration: 0, // Idealmente, obteríamos isso do arquivo
-        fileData: [{ name: uploadedFile.name }],
-      });
+    
+    const formData = new FormData();
+    formData.append('audio', file);
+    formData.append('prospectName', prospectName);
+    formData.append('sdrId', String(user.id));
+    formData.append('organizationId', String(user.organizationId));
+    formData.append('duration', '0'); // O backend pode calcular isso se necessário
 
-      toast.success("Gravação enviada com sucesso!");
+    const uploadToast = toast.loading('A enviar ficheiro...');
+    setStatus('uploading');
+
+    try {
+      // 1. Enviar para o backend para upload no Baserow
+      const uploadResponse = await axios.post(`${API_URL}/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const { call } = uploadResponse.data;
+      
+      toast.loading('A transcrever áudio...', { id: uploadToast });
+      setStatus('transcribing');
+
+      // 2. Acionar a transcrição no backend
+      await axios.post(`${API_URL}/transcribe`, { callId: call.id });
+      
+      toast.success('Processo concluído! A chamada está pronta para análise.', { id: uploadToast });
       onUploadComplete();
       handleClose();
+
     } catch (error: any) {
-      console.error("Falha no upload da gravação:", error);
-      toast.error(error.message || "Não foi possível enviar a gravação.");
-    } finally {
-      setIsUploading(false);
+      console.error("Falha no processo de upload:", error);
+      const errorMessage = error.response?.data?.error || "Ocorreu um erro desconhecido.";
+      toast.error(errorMessage, { id: uploadToast });
+      setStatus('error');
     }
   };
 
   const handleClose = () => {
     setFile(null);
     setProspectName('');
+    setStatus('idle');
     onClose();
   };
   
   if (!isOpen) return null;
+
+  const isUploading = status === 'uploading' || status === 'transcribing';
 
   return (
      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
@@ -80,7 +96,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               className="w-full px-4 py-3 bg-background border border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1">Arquivo de Áudio</label>
+            <label className="block text-sm font-medium text-text-primary mb-1">Ficheiro de Áudio</label>
             <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-gray-300 hover:border-primary/50'}`}>
               <input {...getInputProps()} />
               {file ? (
@@ -92,7 +108,7 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
               ) : (
                 <div className="flex flex-col items-center text-text-secondary">
                   <UploadCloud className="w-12 h-12 mb-2" />
-                  <p className="font-semibold">{isDragActive ? 'Solte o arquivo aqui!' : 'Arraste e solte o arquivo'}</p>
+                  <p className="font-semibold">{isDragActive ? 'Solte o ficheiro aqui!' : 'Arraste e solte o ficheiro'}</p>
                   <p className="text-sm">ou clique para selecionar</p>
                 </div>
               )}
@@ -103,7 +119,9 @@ export function UploadModal({ isOpen, onClose, onUploadComplete }: UploadModalPr
           <button onClick={handleClose} className="px-5 py-2.5 bg-surface border border-gray-200 rounded-lg text-text-primary font-semibold hover:bg-gray-50">Cancelar</button>
           <button onClick={handleUpload} disabled={isUploading || !file || !prospectName} className="px-5 py-2.5 bg-primary text-white rounded-lg font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
             {isUploading && <Loader2 className="w-5 h-5 animate-spin" />}
-            {isUploading ? 'A enviar...' : 'Enviar para Análise'}
+            {status === 'idle' && 'Enviar e Transcrever'}
+            {status === 'uploading' && 'A enviar...'}
+            {status === 'transcribing' && 'A transcrever...'}
           </button>
         </div>
       </div>
