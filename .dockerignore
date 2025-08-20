@@ -1,0 +1,23 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Diretório de dependências
+node_modules
+
+# Arquivos de build
+dist
+dist-ssr
+
+# Arquivos de ambiente local
+.env.local
+.env.*.local
+
+# Outros
+.DS_Store
+.vscode

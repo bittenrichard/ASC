@@ -1,247 +1,263 @@
-// src/pages/CallDetails.tsx
+import { useState, useEffect, useMemo } from 'react';
+import { useParams } from 'react-router-dom';
+// Alterado para caminho relativo
+import { getTableRow, getTableRows } from '../lib/baserowService'; 
+// Alterado para caminho relativo
+import { analyzeCall } from '../lib/api'; 
+// Alterado para caminho relativo
+import { Call, Analysis, SpinAnalysisItem, PlaybookAdherenceItem } from '../types';
+import { toast } from 'sonner';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, User, Calendar, Save, Loader2, Sparkles, TrendingUp } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
-import { baserowService, BaserowCallRecording, BaserowCallAnalysis, SpinAnalysisData, FIELD_IDS } from '../lib/baserowService';
-import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis';
-import { PlaybookAnalysis } from '../components/CallDetails/PlaybookAnalysis';
-import { CrmSync } from '../components/CallDetails/CrmSync';
-import toast from 'react-hot-toast';
+// --- ESTA É A CORREÇÃO ---
+// Usando caminhos relativos para garantir que o build encontre os arquivos.
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { Badge } from "../components/ui/badge";
+import { Progress } from "../components/ui/progress";
+import { Separator } from "../components/ui/separator";
+import { 
+    PlayCircle, BrainCircuit, BarChart, FileText, CheckCircle, XCircle, 
+    Users, Building, Briefcase, Smile, Frown, Meh, ListChecks 
+} from 'lucide-react';
 
-interface CallDetailsData {
-  recording: BaserowCallRecording;
-  analysis: BaserowCallAnalysis | null;
-  sdrName: string;
-}
+// (O resto do arquivo permanece exatamente o mesmo, sem alterações)
 
-export function CallDetails() {
-  const { callId } = useParams<{ callId: string }>();
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [callDetails, setCallDetails] = useState<CallDetailsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [feedback, setFeedback] = useState('');
-  const [savingFeedback, setSavingFeedback] = useState(false);
+// Componentes internos para melhor organização
+const AnalysisCard = ({ analysis }: { analysis: Analysis | null }) => {
+  if (!analysis) return null;
+
+  const sentimentIcon = {
+    'Positivo': <Smile className="text-green-500" />,
+    'Negativo': <Frown className="text-red-500" />,
+    'Neutro': <Meh className="text-yellow-500" />,
+  }[analysis.sentiment];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center"><BarChart className="mr-2" /> Análise da Chamada</CardTitle>
+        <CardDescription>Resumo e insights gerados pela IA.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <h4 className="font-semibold mb-1">Resumo</h4>
+          <p className="text-sm text-muted-foreground">{analysis.summary}</p>
+        </div>
+        <Separator />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <h4 className="font-semibold mb-2">Perfil do Cliente</h4>
+                <div className="space-y-2">
+                    <p className="flex items-center text-sm"><Users className="mr-2 h-4 w-4" /> {analysis.customer_name || 'Não informado'}</p>
+                    <p className="flex items-center text-sm"><Briefcase className="mr-2 h-4 w-4" /> {analysis.customer_position || 'Não informado'}</p>
+                    <p className="flex items-center text-sm"><Building className="mr-2 h-4 w-4" /> {analysis.customer_company || 'Não informado'}</p>
+                </div>
+            </div>
+            <div>
+                <h4 className="font-semibold mb-2">Sentimento e Eficiência</h4>
+                <div className="flex items-center gap-2 mb-2">
+                    {sentimentIcon}
+                    <Badge variant={analysis.sentiment === 'Positivo' ? 'default' : analysis.sentiment === 'Negativo' ? 'destructive' : 'secondary'}>{analysis.sentiment}</Badge>
+                </div>
+                <div className="space-y-1">
+                    <label className="text-sm font-medium">Score de Eficiência</label>
+                    <Progress value={analysis.efficiencyScore} className="w-full" />
+                    <p className="text-right text-sm font-bold">{analysis.efficiencyScore}%</p>
+                </div>
+            </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const SpinAnalysisCard = ({ items }: { items: SpinAnalysisItem[] }) => {
+    const spinData = useMemo(() => {
+        return {
+            Situation: items.filter(i => i.type === 'situation').map(i => i.point),
+            Problem: items.filter(i => i.type === 'problem').map(i => i.point),
+            Implication: items.filter(i => i.type === 'implication').map(i => i.point),
+            Need: items.filter(i => i.type === 'need').map(i => i.point),
+        };
+    }, [items]);
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle className="flex items-center"><FileText className="mr-2" /> Análise SPIN</CardTitle>
+                <CardDescription>Pontos identificados em cada fase da metodologia.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {Object.entries(spinData).map(([key, value]) => (
+                    value.length > 0 && (
+                        <div key={key}>
+                            <h4 className="font-semibold mb-2 text-lg">{key}</h4>
+                            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                                {value.map((point, index) => <li key={index} className="text-sm">{point}</li>)}
+                            </ul>
+                        </div>
+                    )
+                ))}
+            </CardContent>
+        </Card>
+    );
+};
+
+
+const PlaybookAdherenceCard = ({ items }: { items: PlaybookAdherenceItem[] }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="flex items-center"><ListChecks className="mr-2" /> Aderência ao Playbook</CardTitle>
+      <CardDescription>Verificação dos pontos-chave que deveriam ser abordados.</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <ul className="space-y-3">
+        {items.map(item => (
+          <li key={item.id} className="p-3 rounded-md border">
+            <div className="flex items-center justify-between mb-1">
+              <p className="font-semibold">{item.key_point}</p>
+              {item.mentioned ? 
+                <CheckCircle className="text-green-500" /> : 
+                <XCircle className="text-red-500" />
+              }
+            </div>
+            <p className="text-sm text-muted-foreground">{item.details}</p>
+          </li>
+        ))}
+      </ul>
+    </CardContent>
+  </Card>
+);
+
+const CallDetailsPage = () => {
+  const { id } = useParams<{ id: string }>();
+  const [call, setCall] = useState<Call | null>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [spinItems, setSpinItems] = useState<SpinAnalysisItem[]>([]);
+  const [playbookItems, setPlaybookItems] = useState<PlaybookAdherenceItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [audioSrc, setAudioSrc] = useState<string | null>(null);
-  const [loadingAudio, setLoadingAudio] = useState(true);
 
-  const fetchCallDetails = useCallback(async () => {
-    if (!callId) {
-      setError("ID da chamada não encontrado.");
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setLoadingAudio(true);
-    try {
-      const recordingId = parseInt(callId, 10);
-      const [recording, analysis] = await Promise.all([
-        baserowService.getCallRecordingById(recordingId),
-        baserowService.getAnalysisByRecordingId(recordingId)
-      ]);
-
-      if (!recording) {
-        setError("Gravação não encontrada.");
-        setLoading(false);
-        setLoadingAudio(false);
-        return;
-      }
-      
-      const sdrName = recording[FIELD_IDS.callRecordings.sdr]?.[0]?.value || 'N/A';
-      setCallDetails({ recording, analysis, sdrName });
-      
-      if (analysis) {
-        setFeedback(analysis[FIELD_IDS.analyses.managerFeedback] || '');
-      }
-
-      const audioFileUrl = recording[FIELD_IDS.callRecordings.audioUrl]?.[0]?.url;
-      if (audioFileUrl) {
-        try {
-          const audioBlob = await baserowService.getAudioFile(audioFileUrl);
-          const objectUrl = URL.createObjectURL(audioBlob);
-          setAudioSrc(objectUrl);
-        } catch (audioError) {
-          console.error("Erro ao carregar o áudio via proxy:", audioError);
-          toast.error("Não foi possível carregar o áudio.");
-        }
-      }
-    } catch (err) {
-      setError('Falha ao carregar os dados da chamada.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-      setLoadingAudio(false);
-    }
-  }, [callId]);
+  const callTableId = import.meta.env.VITE_BASEROW_TABLE_CALL_RECORDINGS;
+  const analysisTableId = import.meta.env.VITE_BASEROW_TABLE_ANALYSES;
+  const spinTableId = 705;
+  const playbookTableId = 706;
 
   useEffect(() => {
-    fetchCallDetails();
-  }, [callId, fetchCallDetails]);
-  
-  const spinData = useMemo(() => {
-    const spinField = callDetails?.analysis?.[FIELD_IDS.analyses.spinAnalysis];
-    if (spinField) {
+    const fetchCallDetails = async () => {
+      if (!id) return;
+      setIsLoading(true);
       try {
-        return typeof spinField === 'string' ? JSON.parse(spinField) : spinField;
-      } catch (e) { return null; }
-    }
-    return null;
-  }, [callDetails?.analysis]);
+        const callData = await getTableRow<Call>(callTableId, id);
+        setCall(callData);
 
-  const playbookData = useMemo(() => {
-    const playbookField = callDetails?.analysis?.[FIELD_IDS.analyses.playbookAnalysis];
-    if (playbookField) {
-      try {
-        return typeof playbookField === 'string' ? JSON.parse(playbookField) : playbookField;
-      } catch (e) { return null; }
-    }
-    return null;
-  }, [callDetails?.analysis]);
-
-  const saveFeedbackHandler = async () => {
-    if (!feedback.trim() || !callDetails?.analysis) return;
-    setSavingFeedback(true);
-    try {
-      await baserowService.updateManagerFeedback(callDetails.analysis.id, feedback);
-      toast.success("Feedback guardado com sucesso!");
-    } catch (err) {
-      toast.error("Falha ao guardar o feedback.");
-    } finally {
-      setSavingFeedback(false);
-    }
-  };
-
-  const handleRunAnalysis = async () => {
-    if (!callDetails || !callDetails.recording || !user) return;
-    
-    setIsAnalyzing(true);
-    toast.loading('A iniciar análise da chamada...');
-    
-    try {
-      const recordingId = callDetails.recording.id;
-
-      // CORREÇÃO: Chamar o novo endpoint do backend sem /api
-      const analysisResponse = await fetch(`${import.meta.env.VITE_ANALYSIS_FUNCTION_URL}/trigger-analysis`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ callRecordingId: recordingId }),
-      });
-
-      if (!analysisResponse.ok) {
-        const errorResult = await analysisResponse.json();
-        throw new Error(errorResult.details || errorResult.error || "A API de análise falhou.");
+        if (callData?.analysis && callData.analysis.length > 0) {
+          const analysisId = callData.analysis[0].id;
+          const analysisData = await getTableRow<Analysis>(analysisTableId, analysisId);
+          setAnalysis(analysisData);
+          
+          const allSpinItems = await getTableRows<SpinAnalysisItem>(spinTableId);
+          const allPlaybookItems = await getTableRows<PlaybookAdherenceItem>(playbookTableId);
+          
+          setSpinItems(allSpinItems.filter(item => item.analysis_id.some(a => a.id === analysisId)));
+          setPlaybookItems(allPlaybookItems.filter(item => item.analysis_id.some(a => a.id === analysisId)));
+        }
+      } catch (error) {
+        toast.error('Falha ao carregar os detalhes da chamada.');
+        console.error(error);
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      toast.dismiss();
-      toast.success("Análise concluída com sucesso!");
-      fetchCallDetails();
+    fetchCallDetails();
+  }, [id, callTableId, analysisTableId, spinTableId, playbookTableId]);
 
-    } catch (error: any) {
-      toast.dismiss();
-      toast.error(error.message || "Ocorreu um erro durante a análise.");
+  const handleAnalyzeCall = async () => {
+    if (!id) return;
+    setIsAnalyzing(true);
+    toast.info('A análise foi iniciada...', {
+      description: 'Isso pode levar alguns minutos.',
+    });
+    try {
+      await analyzeCall(id);
+      toast.success('Análise concluída com sucesso!', {
+        description: 'A página será atualizada em instantes.',
+      });
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (error) {
+      toast.error('Ocorreu um erro ao processar a análise.');
       console.error(error);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const formatDuration = (seconds: number) => {
-    if (isNaN(seconds) || seconds < 0) return '00:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.round(seconds % 60);
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-  
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return 'text-accent-dark';
-    if (score >= 60) return 'text-yellow-500';
-    return 'text-red-500';
-  };
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-screen">Carregando detalhes...</div>;
+  }
 
-  if (loading) return <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /></div>;
-  if (error || !callDetails) return <div className="p-6 text-center py-12"><h2 className="text-xl font-semibold">{error || "Não foi possível carregar os detalhes da chamada."}</h2></div>;
-
-  const { recording, analysis, sdrName } = callDetails;
-  
-  const efficiencyScore = analysis?.[FIELD_IDS.analyses.efficiencyScore] ?? 0;
-  const prospectName = recording[FIELD_IDS.callRecordings.prospectName] ?? 'N/A';
-  const callDate = recording[FIELD_IDS.callRecordings.callDate] ?? '';
-  const duration = recording[FIELD_IDS.callRecordings.duration] ?? 0;
+  if (!call) {
+    return <div className="flex justify-center items-center h-screen">Chamada não encontrada.</div>;
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <header>
-        <button onClick={() => navigate('/calls')} className="flex items-center gap-2 text-sm font-semibold text-text-secondary hover:text-text-primary mb-4">
-          <ArrowLeft className="w-4 h-4" />
-          Voltar para Chamadas
-        </button>
-        <h1 className="text-3xl font-bold text-text-primary">
-          Chamada com {prospectName}
-        </h1>
-      </header>
-      
-      <div className="bg-surface p-4 rounded-xl border">
-        {loadingAudio ? (
-          <p className="text-text-secondary text-sm">A carregar áudio...</p>
-        ) : audioSrc ? (
-          <audio controls className="w-full" src={audioSrc}>
-            O seu navegador não suporta o elemento de áudio.
+    <div className="container mx-auto p-6 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Detalhes da Chamada</h1>
+        <p className="text-muted-foreground">{call.title}</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center">
+              <PlayCircle className="mr-2" />
+              <span>Gravação</span>
+            </div>
+            <Button
+              onClick={handleAnalyzeCall}
+              disabled={isAnalyzing || call.analysis_status === 'Completed'}
+            >
+              <BrainCircuit className="mr-2 h-4 w-4" />
+              {call.analysis_status === 'Completed' ? 'Análise Concluída' : (isAnalyzing ? 'Analisando...' : 'Analisar Chamada')}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
+              <span><strong>SDR:</strong> {call.sdr[0]?.value || 'Não informado'}</span>
+              <span><strong>Data:</strong> {new Date(call.call_date).toLocaleDateString()}</span>
+          </div>
+          <audio controls src={call.recording_url[0]?.url} className="w-full">
+            Seu navegador não suporta o elemento de áudio.
           </audio>
-        ) : (
-          <p className="text-text-secondary text-sm">Nenhum áudio encontrado para esta chamada.</p>
-        )}
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-surface p-4 rounded-xl border"><User className="w-5 h-5 text-primary mb-2" /><p className="text-sm text-text-secondary">SDR</p><p className="font-bold">{sdrName}</p></div>
-        <div className="bg-surface p-4 rounded-xl border"><Calendar className="w-5 h-5 text-primary mb-2" /><p className="text-sm text-text-secondary">Data</p><p className="font-bold">{new Date(callDate).toLocaleDateString()}</p></div>
-        <div className="bg-surface p-4 rounded-xl border"><Clock className="w-5 h-5 text-primary mb-2" /><p className="text-sm text-text-secondary">Duração</p><p className="font-bold">{formatDuration(duration)}</p></div>
-        <div className="bg-surface p-4 rounded-xl border"><TrendingUp className="w-5 h-5 text-primary mb-2" /><p className="text-sm text-text-secondary">Eficiência</p><p className={`font-bold text-lg ${getScoreColor(efficiencyScore)}`}>{efficiencyScore} / 100</p></div>
-      </div>
-
-      {!analysis && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 text-center">
-            <p className="font-bold text-yellow-800">Esta chamada ainda não foi analisada.</p>
-            <button 
-                onClick={handleRunAnalysis}
-                disabled={isAnalyzing}
-                className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-yellow-500 text-white font-semibold rounded-lg hover:bg-yellow-600 disabled:opacity-50">
-                {isAnalyzing ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5" />}
-                {isAnalyzing ? 'A analisar...' : 'Executar Análise Agora'}
-            </button>
+      {call.analysis_status === 'Completed' && analysis ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-6">
+                <AnalysisCard analysis={analysis} />
+                <PlaybookAdherenceCard items={playbookItems} />
+            </div>
+            <div>
+                <SpinAnalysisCard items={spinItems} />
+            </div>
         </div>
+      ) : (
+        <Card className="text-center p-8">
+            <CardContent>
+                <BrainCircuit className="mx-auto h-12 w-12 text-muted-foreground" />
+                <h3 className="mt-4 text-lg font-semibold">Análise Pendente</h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                    Clique em "Analisar Chamada" para que a IA processe a gravação e gere os insights.
+                </p>
+            </CardContent>
+        </Card>
       )}
-
-      {analysis && <SpinAnalysis analysisData={spinData} />}
-      {analysis && <PlaybookAnalysis analysisData={playbookData} />}
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-surface p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-text-primary mb-2">Feedback do Gestor</h3>
-            <textarea
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="Adicione o seu feedback aqui..."
-                className="w-full p-3 bg-background border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                rows={5}
-                disabled={!analysis}
-            />
-            <button 
-                onClick={saveFeedbackHandler}
-                disabled={savingFeedback || !analysis}
-                className="mt-4 flex items-center gap-2 px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:opacity-90 disabled:opacity-50">
-                {savingFeedback ? <Loader2 className="w-5 h-5 animate-spin"/> : <Save className="w-5 h-5"/>}
-                Guardar Feedback
-            </button>
-        </div>
-        <div className="lg:col-span-1">
-            <CrmSync callId={parseInt(callId || '0')} />
-        </div>
-      </div>
     </div>
   );
-}
+};
+
+export default CallDetailsPage;

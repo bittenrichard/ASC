@@ -1,38 +1,37 @@
-// src/lib/api.ts
-
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
 
-// VARIÁVEL DE AMBIENTE:
-// Certifique-se de que a URL do seu backend está definida no arquivo .env
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+// A URL base da API agora vem consistentemente do .env
+const API_URL = import.meta.env.VITE_BACKEND_URL;
 
 /**
- * Serviço de API para interagir com o backend.
+ * Função para iniciar a análise de uma chamada.
+ * @param callId O ID da chamada a ser analisada.
+ * @returns A resposta da API.
  */
-export const backendService = {
-  /**
-   * Obtém a URL do áudio de uma chamada através de um endpoint de proxy no backend.
-   */
-  async getAudioFile(fileUrl: string): Promise<string> {
-    if (!BACKEND_URL) {
-      const errorMsg = "A variável de ambiente VITE_BACKEND_URL não está definida. Verifique o seu arquivo .env.";
-      toast.error(errorMsg);
-      throw new Error(errorMsg);
-    }
-    
-    try {
-      const response = await axios.post(`${BACKEND_URL}/audio-proxy`, { fileUrl }, {
-        responseType: 'blob'
-      });
-      
-      return URL.createObjectURL(response.data);
-      
-    } catch (error: any) {
-      console.error("Erro no serviço de proxy de áudio:", error);
-      const errorMessage = error.response?.data?.error || "Falha ao buscar o arquivo de áudio. Verifique o console para mais detalhes.";
-      toast.error(errorMessage);
-      throw new Error(errorMessage);
-    }
-  },
+export const analyzeCall = async (callId: number | string) => {
+  try {
+    // A rota no backend é '/analyze'
+    const response = await axios.post(`${API_URL}/analyze`, {
+      callId: callId,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao acionar a análise da chamada:', error);
+    // Lançar o erro permite que o componente que chamou a função o trate (ex: exibindo um toast)
+    throw error;
+  }
+};
+
+/**
+ * Adicione outras funções de API aqui conforme necessário.
+ * Exemplo: buscar o status de uma análise.
+ */
+export const getAnalysisStatus = async (analysisId: string) => {
+  try {
+    const response = await axios.get(`${API_URL}/status/${analysisId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Erro ao buscar status da análise:', error);
+    throw error;
+  }
 };

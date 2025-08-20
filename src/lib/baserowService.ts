@@ -50,7 +50,8 @@ export interface Playbook {
 // --- Configuração da API ---
 const BASE_URL = import.meta.env.VITE_BASEROW_API_URL;
 const API_TOKEN = import.meta.env.VITE_BASEROW_API_TOKEN;
-const PROXY_URL = import.meta.env.VITE_ANALYSIS_FUNCTION_URL; // URL do nosso backend
+// A LINHA ABAIXO FOI CORRIGIDA
+const PROXY_URL = import.meta.env.VITE_BACKEND_URL; // URL do nosso backend
 
 const TABLE_IDS = {
   users: import.meta.env.VITE_BASEROW_TABLE_USERS,
@@ -259,19 +260,19 @@ export const baserowService = {
       [FIELD_IDS.analyses.playbookAnalysis]: JSON.stringify(data.playbookAnalysis),
     });
   },
-  signUpAdmin: (data) => {/* ...código omitido para brevidade... */},
+  signUpAdmin: (data: any) => {/* ...código omitido para brevidade... */},
   getMetricOptions: () => {/* ...código omitido para brevidade... */},
-  createGoal: (data) => {/* ...código omitido para brevidade... */},
-  getGoals: (organizationId) => {/* ...código omitido para brevidade... */},
-  updateGoal: (goalId, dataToUpdate) => {/* ...código omitido para brevidade... */},
-  deleteGoal: (goalId) => {/* ...código omitido para brevidade... */},
-  getLeaderboardData: (organizationId) => {/* ...código omitido para brevidade... */},
-  getPlaybooksByOrg: (organizationId) => {/* ...código omitido para brevidade... */},
-  createPlaybook: (name, organizationId) => {/* ...código omitido para brevidade... */},
-  deletePlaybook: (playbookId) => {/* ...código omitido para brevidade... */},
-  addPlaybookRule: (playbookId, rule) => {/* ...código omitido para brevidade... */},
-  updatePlaybookRule: (ruleId, rule) => {/* ...código omitido para brevidade... */},
-  deletePlaybookRule: (ruleId) => {/* ...código omitido para brevidade... */},
+  createGoal: (data: any) => {/* ...código omitido para brevidade... */},
+  getGoals: (organizationId: any) => {/* ...código omitido para brevidade... */},
+  updateGoal: (goalId: any, dataToUpdate: any) => {/* ...código omitido para brevidade... */},
+  deleteGoal: (goalId: any) => {/* ...código omitido para brevidade... */},
+  getLeaderboardData: (organizationId: any) => {/* ...código omitido para brevidade... */},
+  getPlaybooksByOrg: (organizationId: any) => {/* ...código omitido para brevidade... */},
+  createPlaybook: (name: any, organizationId: any) => {/* ...código omitido para brevidade... */},
+  deletePlaybook: (playbookId: any) => {/* ...código omitido para brevidade... */},
+  addPlaybookRule: (playbookId: any, rule: any) => {/* ...código omitido para brevidade... */},
+  updatePlaybookRule: (ruleId: any, rule: any) => {/* ...código omitido para brevidade... */},
+  deletePlaybookRule: (ruleId: any) => {/* ...código omitido para brevidade... */},
   
   // NOVA FUNÇÃO DE PROXY DE ÁUDIO
   async getAudioFile(baserowAudioUrl: string): Promise<Blob> {
