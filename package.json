@@ -1,50 +1,27 @@
 {
-  "name": "vite-react-typescript-starter",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
+  "name": "copiloto-sdr-backend",
+  "version": "1.0.0",
+  "description": "Serviço de análise de chamadas para o Copiloto SDR",
+  "main": "dist/index.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "serve": "vite preview",
-    "tauri": "tauri"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch & node dist/index.js"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.1",
-    "@radix-ui/react-label": "^2.1.0",
-    "@radix-ui/react-progress": "^1.1.0",
-    "@radix-ui/react-select": "^2.1.1",
-    "@radix-ui/react-slot": "^1.1.0",
-    "@tauri-apps/api": "^1.6.0",
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "openai": "^4.29.2",
+    "body-parser": "^1.20.2",
     "axios": "^1.7.2",
-    "bcryptjs": "^2.4.3",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.1.1",
-    "localforage": "^1.10.0",
-    "lucide-react": "^0.417.0",
-    "match-sorter": "^6.3.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-dropzone": "^14.2.3",
-    "react-hot-toast": "^2.4.1",
-    "react-router-dom": "^6.25.1",
-    "recharts": "^2.12.7",
-    "sonner": "^1.5.0",
-    "sort-by": "^1.2.0",
-    "tailwind-merge": "^2.4.0",
-    "tailwindcss-animate": "^1.0.7"
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.0",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/node": "^20.14.12",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.19",
-    "postcss": "^8.4.39",
-    "tailwindcss": "^3.4.6",
-    "typescript": "^5.5.4",
-    "vite": "^5.4.0"
+    "typescript": "^5.5.3",
+    "ts-node": "^10.9.1",
+    "nodemon": "^3.1.4",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/body-parser": "^1.19.5"
   }
 }
