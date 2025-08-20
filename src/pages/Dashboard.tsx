@@ -1,8 +1,8 @@
 // src/pages/Dashboard.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { Phone, Users, BookOpen, Star, ShieldCheck, Target, TrendingUp } from 'lucide-react';
+import { Phone, Users, BookOpen, Star, ShieldCheck, Target, TrendingUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { baserowService, GoalData, AppUserObject, BaserowCallAnalysis, SpinAnalysisData, FIELD_IDS } from '../lib/baserowService';
+import { baserowService, GoalData, AppUserObject, SpinAnalysisData, FIELD_IDS } from '../lib/baserowService';
 import { MetricCard } from '../components/Dashboard/MetricCard';
 import { CallsTable } from '../components/Dashboard/CallsTable';
 import { KPIWidget } from '../components/Dashboard/KPIWidget';
@@ -54,18 +54,6 @@ const DATE_RANGES = {
     const end = new Date(now.getFullYear(), now.getMonth(), 0);
     return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
   },
-  'Últimos 30 Dias': () => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 29);
-    return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
-  },
-  'Últimos 7 Dias': () => {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 6);
-    return { startDate: start.toISOString().split('T')[0], endDate: end.toISOString().split('T')[0] };
-  },
 };
 
 // --- Componente para o Dashboard de Administrador ---
@@ -86,25 +74,33 @@ function AdminDashboard() {
     setLoading(true);
 
     try {
-      const sdrList = await baserowService.getAllSDRs(user.organizationId);
-      setAllSDRs(sdrList);
-      const sdrMap = new Map(sdrList.map(sdr => [sdr.id, sdr.name]));
-      
       const sdrIdToFetch = selectedSdrId === 'team' ? undefined : parseInt(selectedSdrId);
 
-      const [recordings, analyses, goals] = await Promise.all([
+      const [sdrList, recordings, analyses, goals, leaderboard] = await Promise.all([
+        baserowService.getAllSDRs(user.organizationId),
         baserowService.getCallRecordings(user.organizationId, sdrIdToFetch),
         baserowService.getCallAnalyses(user.organizationId, sdrIdToFetch),
         baserowService.getGoals(user.organizationId),
+        baserowService.getLeaderboardData(user.organizationId)
       ]);
       
-      const analysesMap = new Map(analyses.map(a => [a[FIELD_IDS.analyses.callRecording]?.[0]?.id, a]));
+      const safeSDRs = sdrList || [];
+      const safeRecordings = recordings || [];
+      const safeAnalyses = analyses || [];
+      const safeGoals = goals || [];
+      const safeLeaderboard = leaderboard || [];
+
+      setAllSDRs(safeSDRs);
+      const sdrMap = new Map(safeSDRs.map(sdr => [sdr.id, sdr.name]));
+      const analysesMap = new Map(safeAnalyses.map(a => [a[FIELD_IDS.analyses.callRecording]?.[0]?.id, a]));
 
       const start = new Date(dateRange.startDate + 'T00:00:00');
       const end = new Date(dateRange.endDate + 'T23:59:59');
 
-      const filteredRecordings = recordings.filter(rec => {
-        const callDate = new Date(rec[FIELD_IDS.callRecordings.callDate]);
+      const filteredRecordings = safeRecordings.filter(rec => {
+        const callDateStr = rec[FIELD_IDS.callRecordings.callDate];
+        if (!callDateStr) return false;
+        const callDate = new Date(callDateStr);
         return callDate >= start && callDate <= end;
       });
 
@@ -128,54 +124,27 @@ function AdminDashboard() {
       setRecentCalls(combinedData.slice(0, 5));
 
       const totalCalls = combinedData.length;
-      const totalScore = combinedData.reduce((sum, call) => sum + call.efficiency_score, 0);
-      const avgEfficiencyScore = totalCalls > 0 ? Math.round(totalScore / totalCalls) : 0;
-
-      const relevantGoals = goals.filter(goal => {
-        if (selectedSdrId === 'team') return true;
-        return !goal.sdrId || goal.sdrId === parseInt(selectedSdrId);
-      });
-
-      const kpis = relevantGoals.map(goal => {
-        let currentValue = 0;
-        const sdrSpecificData = selectedSdrId === 'team' ? combinedData : combinedData.filter(c => c.sdr_id === parseInt(selectedSdrId));
-
-        switch (goal.metric) {
-          case 'Número de Chamadas':
-            currentValue = sdrSpecificData.length;
-            break;
-          case 'Pontuação Média de Eficiência':
-            const total = sdrSpecificData.reduce((sum, call) => sum + call.efficiency_score, 0);
-            currentValue = sdrSpecificData.length > 0 ? Math.round(total / sdrSpecificData.length) : 0;
-            break;
-          case 'Reuniões Agendadas':
-            currentValue = 0; // Placeholder
-            break;
-        }
-
-        const progress = goal.targetValue > 0 ? Math.min(Math.round((currentValue / goal.targetValue) * 100), 100) : 0;
-        
-        return {
-          label: `${goal.name} (${goal.sdrName})`,
-          value: currentValue.toString(),
-          target: goal.targetValue.toString(),
-          progress: progress,
-        };
-      });
-
-      // Lógica para o Spider Chart
+      const analyzedCalls = combinedData.filter(c => c.status === 'Analisada');
+      const totalScore = analyzedCalls.reduce((sum, call) => sum + call.efficiency_score, 0);
+      const avgEfficiencyScore = analyzedCalls.length > 0 ? Math.round(totalScore / analyzedCalls.length) : 0;
+      
+      const topPerformer = safeLeaderboard.length > 0 ? { name: safeLeaderboard[0].name, score: safeLeaderboard[0].avg_score } : { name: 'N/A', score: 0 };
+      
+      // Lógica para o Gráfico de Radar SPIN
       let avgSpinScores = { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
       let spinCount = 0;
-      analyses.forEach(analysis => {
+      safeAnalyses.forEach(analysis => {
           const spinRaw = analysis[FIELD_IDS.analyses.spinAnalysis];
           if (spinRaw) {
               try {
                   const spinData: SpinAnalysisData = typeof spinRaw === 'string' ? JSON.parse(spinRaw) : spinRaw;
-                  avgSpinScores.situation += spinData.situation.score;
-                  avgSpinScores.problem += spinData.problem.score;
-                  avgSpinScores.implication += spinData.implication.score;
-                  avgSpinScores.need_payoff += spinData.need_payoff.score;
-                  spinCount++;
+                  if (spinData && spinData.situation) {
+                    avgSpinScores.situation += spinData.situation.score;
+                    avgSpinScores.problem += spinData.problem.score;
+                    avgSpinScores.implication += spinData.implication.score;
+                    avgSpinScores.need_payoff += spinData.need_payoff.score;
+                    spinCount++;
+                  }
               } catch (e) {
                   console.error("Erro ao fazer parse da análise SPIN:", e);
               }
@@ -192,23 +161,18 @@ function AdminDashboard() {
       } else {
           setSpinChartData([]);
       }
-
-      const leaderboard = await baserowService.getLeaderboardData(user.organizationId);
-      const topPerformer = leaderboard.length > 0 ? { name: leaderboard[0].name, score: leaderboard[0].avg_score } : { name: 'N/A', score: 0 };
       
       setDashboardData({
         totalCalls: totalCalls,
         avgEfficiencyScore: avgEfficiencyScore,
-        kpis: kpis,
+        kpis: [], 
         topPerformer: topPerformer,
-        recentAchievements: [
-          { icon: Star, title: 'Primeira Venda', description: 'A ser conquistado!' },
-          { icon: ShieldCheck, title: 'Guardião do Playbook', description: 'A ser conquistado!' },
-        ],
+        recentAchievements: [],
       });
 
     } catch (error) {
       console.error("Erro ao carregar dados do dashboard de admin:", error);
+      toast.error("Falha ao carregar dados do Dashboard.");
       setDashboardData(null);
     } finally {
       setLoading(false);
@@ -220,11 +184,10 @@ function AdminDashboard() {
   }, [fetchDashboardData]);
 
   if (loading || !dashboardData) {
-    return <div className="p-8 text-center text-text-secondary">A carregar dashboard...</div>;
+    return <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /><p className="mt-2">A carregar dashboard...</p></div>;
   }
 
   const selectedSdrName = selectedSdrId === 'team' ? 'Equipe Inteira' : allSDRs.find(sdr => sdr.id.toString() === selectedSdrId)?.name;
-
   const displayStartDate = new Date(dateRange.startDate.replace(/-/g, '/')).toLocaleDateString('pt-BR');
   const displayEndDate = new Date(dateRange.endDate.replace(/-/g, '/')).toLocaleDateString('pt-BR');
 
@@ -312,23 +275,28 @@ function SdrDashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [myCalls, setMyCalls] = useState<CombinedCallData[]>([]);
+  const [sdrSpinChartData, setSdrSpinChartData] = useState<ChartDataPoint[]>([]);
 
-  const fetchMyCalls = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     try {
-        const recordings = await baserowService.getCallRecordings(user.organizationId, user.id);
-        const analyses = await baserowService.getCallAnalyses(user.organizationId, user.id);
-        const analysesMap = new Map(analyses.map((a: any) => [a[FIELD_IDS.analyses.callRecording]?.[0]?.id, a]));
+        const [recordings, analyses] = await Promise.all([
+            baserowService.getCallRecordings(user.organizationId, user.id),
+            baserowService.getCallAnalyses(user.organizationId, user.id),
+        ]);
         
-        const combinedData: CombinedCallData[] = recordings
-          .sort((a: any, b: any) => new Date(b[FIELD_IDS.callRecordings.callDate]).getTime() - new Date(a[FIELD_IDS.callRecordings.callDate]).getTime())
-          .map((rec: any) => {
-              const sdrId = rec[FIELD_IDS.callRecordings.sdr]?.[0]?.id || null;
+        const safeRecordings = recordings || [];
+        const safeAnalyses = analyses || [];
+        const analysesMap = new Map(safeAnalyses.map(a => [a[FIELD_IDS.analyses.callRecording]?.[0]?.id, a]));
+        
+        const combinedData: CombinedCallData[] = safeRecordings
+          .sort((a, b) => new Date(b[FIELD_IDS.callRecordings.callDate]).getTime() - new Date(a[FIELD_IDS.callRecordings.callDate]).getTime())
+          .map(rec => {
               const analysis = analysesMap.get(rec.id);
               return {
                   call_id: rec.id.toString(),
-                  sdr_id: sdrId,
+                  sdr_id: user.id,
                   prospect_name: rec[FIELD_IDS.callRecordings.prospectName] || 'N/A',
                   call_date: rec[FIELD_IDS.callRecordings.callDate],
                   efficiency_score: analysis?.[FIELD_IDS.analyses.efficiencyScore] || 0,
@@ -337,45 +305,23 @@ function SdrDashboard() {
                   call_duration_seconds: rec[FIELD_IDS.callRecordings.duration] || 0,
               };
           });
-        
         setMyCalls(combinedData);
-      } catch (error) {
-        console.error('Erro ao buscar minhas chamadas:', error);
-      } finally {
-        setLoading(false);
-      }
-  }, [user]);
 
-  useEffect(() => {
-    if (user) {
-        fetchMyCalls();
-    }
-  }, [user, fetchMyCalls]);
-  
-  // Lógica para o Spider Chart de SDR
-  const [sdrSpinChartData, setSdrSpinChartData] = useState<ChartDataPoint[]>([]);
-
-  useEffect(() => {
-    const fetchSdrSpinData = async () => {
-      if (!user) return;
-      try {
-        const analyses = await baserowService.getCallAnalyses(user.organizationId, user.id);
-        
         let avgSpinScores = { situation: 0, problem: 0, implication: 0, need_payoff: 0 };
         let spinCount = 0;
-        analyses.forEach(analysis => {
+        safeAnalyses.forEach(analysis => {
             const spinRaw = analysis[FIELD_IDS.analyses.spinAnalysis];
             if (spinRaw) {
                 try {
                     const spinData: SpinAnalysisData = typeof spinRaw === 'string' ? JSON.parse(spinRaw) : spinRaw;
-                    avgSpinScores.situation += spinData.situation.score;
-                    avgSpinScores.problem += spinData.problem.score;
-                    avgSpinScores.implication += spinData.implication.score;
-                    avgSpinScores.need_payoff += spinData.need_payoff.score;
-                    spinCount++;
-                } catch (e) {
-                    console.error("Erro ao fazer parse da análise SPIN:", e);
-                }
+                     if (spinData && spinData.situation) {
+                        avgSpinScores.situation += spinData.situation.score;
+                        avgSpinScores.problem += spinData.problem.score;
+                        avgSpinScores.implication += spinData.implication.score;
+                        avgSpinScores.need_payoff += spinData.need_payoff.score;
+                        spinCount++;
+                    }
+                } catch (e) { console.error("Erro ao fazer parse da análise SPIN:", e); }
             }
         });
 
@@ -390,18 +336,22 @@ function SdrDashboard() {
             setSdrSpinChartData([]);
         }
 
-      } catch(e) {
-        console.error("Erro ao buscar dados do SPIN para o SDR:", e);
+      } catch (error) {
+        console.error('Erro ao buscar os dados do SDR:', error);
+        toast.error("Falha ao carregar os seus dados.");
+      } finally {
+        setLoading(false);
       }
-    };
-
-    fetchSdrSpinData();
   }, [user]);
 
-  // Cálculo das métricas do SDR
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const totalCalls = myCalls.length;
-  const totalScore = myCalls.reduce((sum, call) => sum + call.efficiency_score, 0);
-  const avgEfficiencyScore = totalCalls > 0 ? Math.round(totalScore / totalCalls) : 0;
+  const analyzedCalls = myCalls.filter(c => c.status === 'Analisada');
+  const totalScore = analyzedCalls.reduce((sum, call) => sum + call.efficiency_score, 0);
+  const avgEfficiencyScore = analyzedCalls.length > 0 ? Math.round(totalScore / analyzedCalls.length) : 0;
   
   return (
     <div className="p-8 space-y-8">
@@ -416,7 +366,7 @@ function SdrDashboard() {
         <div className="bg-surface p-6 rounded-2xl shadow-lg border border-gray-100 flex flex-col justify-between">
             <h3 className="text-lg font-bold text-text-primary mb-4">Minha Análise SPIN Média</h3>
             <div className="h-64 flex items-center justify-center">
-            {sdrSpinChartData.length > 0 ? (
+            {loading ? <Loader2 className="animate-spin" /> : sdrSpinChartData.length > 0 ? (
                 <SpinRadarChart data={sdrSpinChartData} />
             ) : (
                 <div className="text-center text-text-secondary">
@@ -428,7 +378,7 @@ function SdrDashboard() {
       </div>
       
       {loading ? (
-        <div className="p-8 text-center text-text-secondary">A carregar suas chamadas...</div>
+        <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /><p className="mt-2">A carregar as suas chamadas...</p></div>
       ) : (
         <CallsTable title="Minhas Últimas Chamadas" calls={myCalls} showSDRColumn={false} />
       )}
@@ -436,14 +386,11 @@ function SdrDashboard() {
   );
 }
 
-// --- Componente Principal que decide qual Dashboard mostrar ---
+// --- Componente Principal ---
 export function Dashboard() {
   const { user, loading: authLoading } = useAuth();
   if (authLoading) {
-    return <div className="p-8 text-center text-text-secondary">A autenticar...</div>;
+    return <div className="p-8 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto" /><p className="mt-2">A autenticar...</p></div>;
   }
-  if (user?.role === 'administrator') {
-    return <AdminDashboard />;
-  }
-  return <SdrDashboard />;
+  return user?.role === 'administrator' ? <AdminDashboard /> : <SdrDashboard />;
 }

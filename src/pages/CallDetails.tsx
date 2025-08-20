@@ -9,7 +9,6 @@ import { SpinAnalysis } from '../components/CallDetails/SpinAnalysis';
 import { PlaybookAnalysis } from '../components/CallDetails/PlaybookAnalysis';
 import { CrmSync } from '../components/CallDetails/CrmSync';
 import toast from 'react-hot-toast';
-import { backendService } from '../lib/api'; // Importação do serviço de backend
 
 interface CallDetailsData {
   recording: BaserowCallRecording;
@@ -47,6 +46,8 @@ export function CallDetails() {
 
       if (!recording) {
         setError("Gravação não encontrada.");
+        setLoading(false);
+        setLoadingAudio(false);
         return;
       }
       
@@ -59,13 +60,17 @@ export function CallDetails() {
 
       const audioFileUrl = recording[FIELD_IDS.callRecordings.audioUrl]?.[0]?.url;
       if (audioFileUrl) {
-          const proxiedAudioUrl = await backendService.getAudioFile(audioFileUrl);
-          setAudioSrc(proxiedAudioUrl);
-      } else {
-          setAudioSrc(null);
+        try {
+          const audioBlob = await baserowService.getAudioFile(audioFileUrl);
+          const objectUrl = URL.createObjectURL(audioBlob);
+          setAudioSrc(objectUrl);
+        } catch (audioError) {
+          console.error("Erro ao carregar o áudio via proxy:", audioError);
+          toast.error("Não foi possível carregar o áudio.");
+        }
       }
     } catch (err) {
-      setError('Falha ao carregar os dados da chamada ou o áudio.');
+      setError('Falha ao carregar os dados da chamada.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -118,10 +123,23 @@ export function CallDetails() {
     
     try {
       const recordingId = callDetails.recording.id;
-      await baserowService.triggerAnalysis(recordingId);
+
+      // CORREÇÃO: Chamar o novo endpoint do backend sem /api
+      const analysisResponse = await fetch(`${import.meta.env.VITE_ANALYSIS_FUNCTION_URL}/trigger-analysis`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ callRecordingId: recordingId }),
+      });
+
+      if (!analysisResponse.ok) {
+        const errorResult = await analysisResponse.json();
+        throw new Error(errorResult.details || errorResult.error || "A API de análise falhou.");
+      }
+
       toast.dismiss();
       toast.success("Análise concluída com sucesso!");
       fetchCallDetails();
+
     } catch (error: any) {
       toast.dismiss();
       toast.error(error.message || "Ocorreu um erro durante a análise.");
@@ -166,7 +184,6 @@ export function CallDetails() {
         </h1>
       </header>
       
-      {/* Leitor de Áudio */}
       <div className="bg-surface p-4 rounded-xl border">
         {loadingAudio ? (
           <p className="text-text-secondary text-sm">A carregar áudio...</p>
@@ -199,7 +216,7 @@ export function CallDetails() {
         </div>
       )}
 
-      {analysis && <SpinAnalysis spinAnalysis={spinData} />}
+      {analysis && <SpinAnalysis analysisData={spinData} />}
       {analysis && <PlaybookAnalysis analysisData={playbookData} />}
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
