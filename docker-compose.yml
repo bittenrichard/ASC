@@ -1,28 +1,28 @@
 version: '3.8'
 
 services:
-  # --- Serviço do Backend (API) ---
+  # --- Serviço do Backend (API de Análise) ---
   backend:
-    # A sua imagem de backend existente
-    image: orickjogando/copiloto-sdr-backend:1.0.0
+    # Constrói a imagem a partir do Dockerfile no diretório atual
+    build: .
+    # Define um nome para a imagem construída, para referência futura
+    image: orickjogando/copiloto-sdr-backend:latest
     container_name: copiloto-sdr-backend
-    environment:
-      # Variáveis de ambiente para a API em produção
-      - BASEROW_API_TOKEN=seu_token_aqui_para_producao
-      - OPENAI_API_KEY=sua_chave_openai_aqui
+    
+    # --- CORREÇÃO DEFINITIVA ---
+    # Usa o arquivo .env para carregar as variáveis de ambiente.
+    env_file:
+      - .env
+
     networks:
       - network
+    restart: always
     deploy:
       labels:
-        # Habilita o Traefik para este serviço
         - "traefik.enable=true"
-        # Roteia o tráfego para o host "backend.calculei.online" para este contêiner
         - "traefik.http.routers.copiloto-backend-router.rule=Host(`backend.calculei.online`)"
-        # Define os pontos de entrada para HTTPS
         - "traefik.http.routers.copiloto-backend-router.entrypoints=websecure"
-        # Usa o resolvedor de certificados TLS
         - "traefik.http.routers.copiloto-backend-router.tls.certresolver=letsencryptresolver"
-        # Direciona o tráfego para a porta 3000 do contêiner
         - "traefik.http.services.copiloto-backend-service.loadbalancer.server.port=3000"
 
   # --- Serviço do Frontend (React App) ---

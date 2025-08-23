@@ -1,11 +1,10 @@
-# --- Estágio 1: Build ---
+# --- Estágio 1: Build do TypeScript
 # Usa uma imagem Node.js moderna para garantir a compatibilidade
 FROM node:20-alpine AS build
 
 # Define o diretório de trabalho
 WORKDIR /app
 
-# --- CORREÇÃO FINAL ---
 # O asterisco (*) garante que o package.json E o package-lock.json sejam copiados.
 COPY package*.json ./
 
@@ -14,11 +13,10 @@ RUN npm install
 
 # Copia todo o código-fonte do projeto
 COPY . .
-
 # Usa o comando de build padrão definido no package.json
 RUN npm run build
 
-# --- Estágio 2: Serve ---
+# --- Estágio 2: Serve
 # Usa uma imagem Nginx leve para servir os arquivos estáticos
 FROM nginx:stable-alpine AS production
 

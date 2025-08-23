@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Loader2, Mic, StopCircle, Save, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom'; // Importar useNavigate
 
 const API_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -15,6 +16,7 @@ interface ManualRecordingModalProps {
 
 export const ManualRecordingModal: React.FC<ManualRecordingModalProps> = ({ isOpen, onClose, onUploadComplete }) => {
   const { user } = useAuth();
+  const navigate = useNavigate(); // Hook para navegação
   const [prospectName, setProspectName] = useState('');
   const [status, setStatus] = useState<'idle' | 'recording' | 'finished' | 'saving'>('idle');
   const [seconds, setSeconds] = useState(0);
@@ -42,13 +44,16 @@ export const ManualRecordingModal: React.FC<ManualRecordingModalProps> = ({ isOp
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = new MediaRecorder(stream, { 
+        mimeType: 'audio/webm; codecs=opus',
+        audioBitsPerSecond: 128000 // Aumenta a qualidade do áudio
+      });
       audioChunksRef.current = [];
       mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
       mediaRecorderRef.current.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm; codecs=opus' });
         setAudioBlob(blob);
         setStatus('finished');
       };
@@ -86,13 +91,9 @@ export const ManualRecordingModal: React.FC<ManualRecordingModalProps> = ({ isOp
       const uploadResponse = await axios.post(`${API_URL}/upload`, formData);
       const { call } = uploadResponse.data;
       
-      toast.loading('A transcrever áudio...', { id: uploadToast });
-
-      await axios.post(`${API_URL}/transcribe`, { callId: call.id });
-
-      toast.success('Processo concluído!', { id: uploadToast });
-      onUploadComplete();
+      toast.success('Upload concluído! A transcrição começará em breve.', { id: uploadToast });
       handleClose();
+      navigate(`/call/${call.id}`); // Redireciona para a página de detalhes
     } catch (error: any) {
       const errorMessage = error.response?.data?.error || "Ocorreu um erro desconhecido.";
       toast.error(errorMessage, { id: uploadToast });
